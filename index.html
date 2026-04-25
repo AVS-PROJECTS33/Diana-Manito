@@ -27,6 +27,7 @@
             background-color: #020617; 
             user-select: none; 
             -webkit-user-select: none;
+            -webkit-touch-callout: none; /* BLOQUEA EL POP-UP AL MANTENER PULSADO EN MÓVILES */
             font-family: system-ui, -apple-system, sans-serif;
             overflow: hidden !important; 
             width: 100vw;
@@ -34,6 +35,11 @@
             margin: 0;
             padding: 0;
             touch-action: none;
+        }
+        /* Bloquea el arrastre de imágenes y SVGs */
+        img, svg {
+            user-drag: none;
+            -webkit-user-drag: none;
         }
         ::-webkit-scrollbar { width: 6px; height: 6px; }
         ::-webkit-scrollbar-track { background: transparent; }
@@ -107,6 +113,10 @@
             const [user, setUser] = useState(null);
 
             useEffect(() => {
+                // BLOQUEAR MENÚ CONTEXTUAL GLOBALMENTE (Pulsación larga en móvil)
+                const preventContextMenu = (e) => e.preventDefault();
+                document.addEventListener('contextmenu', preventContextMenu);
+
                 const checkFb = setInterval(() => {
                     if (window.fb) {
                         setFbLoaded(true);
@@ -146,7 +156,11 @@
                         } catch(e) { console.warn("Firebase no configurado correctamente.", e); }
                     }
                 }, 50);
-                return () => clearInterval(checkFb);
+
+                return () => {
+                    clearInterval(checkFb);
+                    document.removeEventListener('contextmenu', preventContextMenu);
+                };
             }, []);
 
             // --- ESTADO ÚNICO DEL JUEGO ---
@@ -381,7 +395,6 @@
                 let stolen = false;
                 if (gameMode === 'perdiz' && gameState.lastTurnPlayerIdx !== null && gameState.lastTurnPlayerIdx !== currentPlayerIdx) {
                     const prevThrows = gameState.lastTurnThrows || [];
-                    // AHORA TIENE QUE COINCIDIR SECTOR Y MULTIPLICADOR PARA ROBAR
                     if (sector !== 0 && prevThrows.some(t => t.sector === sector && t.multiplier === multiplier)) {
                         stolen = true;
                     }
@@ -635,14 +648,12 @@
                                 if (s.bestScore !== undefined) {
                                     score = s.bestScore;
                                 } else if (s.darts > 0) {
-                                    // Compatibilidad si hay records antiguos sin bestScore
                                     score = isCricketMode ? ((s.marks / s.darts) * 3) : (s.points / s.darts);
                                 }
                                 if (score > globalBest) globalBest = score;
                             }
                         });
 
-                        // Si es el récord más alto de la base de datos (o la primera partida)
                         if (matchScore > globalBest && matchScore > 0) {
                             newIsRecord = true;
                             newRecordText = matchScore.toFixed(2) + (isCricketMode ? ' MPR' : ' PPD');
@@ -824,7 +835,6 @@
                             <div>
                                 <label className="block text-cyan-400 text-sm font-bold mb-1 uppercase flex items-center gap-2"><IconUsers size={16}/> Jugadores</label>
                                 <select value={numPlayers} onChange={(e) => updateGame({numPlayers: Number(e.target.value)})} className="w-full bg-slate-950/80 border-2 border-slate-700/50 text-white p-3 rounded-xl text-lg font-bold text-center cursor-pointer focus:border-cyan-500 focus:outline-none backdrop-blur-sm">
-                                    {/* AHORA HASTA 8 JUGADORES */}
                                     {[1, 2, 3, 4, 5, 6, 7, 8].map(n => <option key={n} value={n}>{n} {n === 1 ? 'Jugador' : 'Jugadores'}</option>)}
                                 </select>
                             </div>
@@ -888,6 +898,17 @@
                 </div>
             );
 
+            // FUNCIÓN AÑADIDA PARA EVITAR EL ERROR (REFERENCE ERROR)
+            const renderMobileWaiting = () => (
+                <div className="flex-1 flex flex-col items-center justify-center p-6 relative z-10 text-center">
+                    <IconTarget size={80} className="text-cyan-400 mb-6 animate-pulse drop-shadow-[0_0_15px_rgba(6,182,212,0.8)]" />
+                    <h2 className="text-3xl font-black text-white mb-2">SALA: <span className="text-fuchsia-400">{roomId}</span></h2>
+                    <div className="bg-slate-900/80 p-6 rounded-2xl border border-slate-700/50 shadow-xl backdrop-blur-sm mt-8">
+                        <p className="text-slate-300 font-bold text-lg animate-pulse">Esperando a que la Tablet inicie la partida...</p>
+                    </div>
+                </div>
+            );
+
             const renderMobilePlayerSelect = () => {
                 if (appState !== 'playing') {
                     return (
@@ -931,7 +952,7 @@
                 
                 let colors = { dark: '#0f172a', light: '#334155', double1: '#ec4899', double2: '#06b6d4', text: '#f8fafc', bullOuter: '#06b6d4', bullInner: '#ec4899' };
                 if (gameMode === 'perdiz') {
-                    // PALETA EXCLUSIVA PERDIZ (Rastafari / Jamaica: Negro, Verde, Rojo, Amarillo)
+                    // PALETA EXCLUSIVA PERDIZ
                     colors = { dark: '#171717', light: '#16a34a', double1: '#dc2626', double2: '#eab308', text: '#ffffff', bullOuter: '#eab308', bullInner: '#dc2626' };
                 }
                 const getColors = (index) => ({ single: index % 2 === 0 ? colors.dark : colors.light, ring: index % 2 === 0 ? colors.double1 : colors.double2 });

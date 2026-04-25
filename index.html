@@ -44,13 +44,22 @@
         ::-webkit-scrollbar { width: 6px; height: 6px; }
         ::-webkit-scrollbar-track { background: transparent; }
         ::-webkit-scrollbar-thumb { background: rgba(6, 182, 212, 0.5); border-radius: 4px; }
+
+        /* Animación para el Toast del objetivo */
+        @keyframes toast-slide-in {
+            0% { transform: translateY(-20px) scale(0.9); opacity: 0; }
+            100% { transform: translateY(0) scale(1); opacity: 1; }
+        }
+        .animate-toast {
+            animation: toast-slide-in 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+        }
     </style>
 </head>
 <body>
     <div id="root" class="w-full h-full"></div>
 
     <script type="text/babel">
-        const { useState, useEffect } = React;
+        const { useState, useEffect, useRef } = React;
 
         // --- ICONOS ---
         const IconTarget = ({ size = 24, className = "" }) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg>;
@@ -195,6 +204,10 @@
             const [hitFeedback, setHitFeedback] = useState(null);
             const [previewText, setPreviewText] = useState(null); 
             const [rankingsData, setRankingsData] = useState([]); 
+            
+            // Estado para el indicador de impacto superior derecho
+            const [showTargetToast, setShowTargetToast] = useState(null);
+            const toastTimeoutRef = useRef(null);
 
             // --- SINCRONIZACIÓN CON FIREBASE ---
             useEffect(() => {
@@ -377,6 +390,24 @@
                 return localPlayerId === currentPlayerIdx; 
             };
 
+            // Función auxiliar para mostrar el Toast del objetivo tocado
+            const showToast = (text, multiplier) => {
+                let colorClass = 'text-cyan-400 border-cyan-500/50 shadow-[0_0_15px_rgba(6,182,212,0.4)]'; // Single
+                if (multiplier === 2) colorClass = 'text-fuchsia-400 border-fuchsia-500/50 shadow-[0_0_15px_rgba(236,72,153,0.4)]'; // Doble o Bull Inner
+                if (multiplier === 3) colorClass = 'text-yellow-400 border-yellow-500/50 shadow-[0_0_15px_rgba(234,179,8,0.4)]'; // Triple
+                if (text === 'Fallo') colorClass = 'text-red-400 border-red-500/50 shadow-[0_0_15px_rgba(239,68,68,0.4)]';
+
+                setShowTargetToast({ text, colorClass, id: Date.now() });
+
+                if (toastTimeoutRef.current) {
+                    clearTimeout(toastTimeoutRef.current);
+                }
+                
+                toastTimeoutRef.current = setTimeout(() => {
+                    setShowTargetToast(null);
+                }, 1500); // Se oculta después de 1.5 segundos
+            };
+
             const handleHit = (sector, multiplier) => {
                 if (!isActionAllowed()) return false;
                 if (currentTurnThrows.length >= 3 || winner || isBust || pendingConfirmation) return false;
@@ -391,6 +422,9 @@
                 if (sector === 25) points = multiplier === 1 ? 25 : 50;
 
                 let text = getSectorText(sector, multiplier);
+                
+                // Mostramos el Toast visual en la diana
+                showToast(text, multiplier);
                 
                 let stolen = false;
                 if (gameMode === 'perdiz' && gameState.lastTurnPlayerIdx !== null && gameState.lastTurnPlayerIdx !== currentPlayerIdx) {
@@ -452,6 +486,9 @@
                 if (!isActionAllowed()) return false;
                 if (currentTurnThrows.length >= 3 || winner || isBust || pendingConfirmation) return false;
                 const throwData = { sector: 0, multiplier: 0, points: 0, text: `Fallo (Fuera)` };
+                
+                showToast(throwData.text, 0);
+
                 updateGame({
                     currentTurnThrows: [...currentTurnThrows, throwData],
                     lastHit: throwData
@@ -469,6 +506,7 @@
                         lastHit: newThrows.length > 0 ? newThrows[newThrows.length - 1] : null,
                         isBust: false
                     });
+                    setShowTargetToast(null); // Ocultar toast si deshacemos
                 }
             };
 
@@ -679,12 +717,15 @@
                     lastTurnThrows: isBust ? [] : currentTurnThrows,
                     activeTab: 'board'
                 });
+
+                setShowTargetToast(null); // Ocultar toast al cambiar de turno
             };
 
             const resetGame = () => {
                 updateGame({ appState: 'home' });
                 setIsOnline(false);
                 setRoomId(null);
+                setShowTargetToast(null);
             };
 
             const triggerFeedback = (svgProps) => {
@@ -1142,6 +1183,15 @@
                                     
                                     <div className={`order-2 md:order-1 ${joinedViaUrl ? 'flex-1' : 'flex-[2] md:flex-[3]'} flex items-center justify-center bg-slate-900/80 backdrop-blur-md rounded-3xl border border-slate-700/50 p-1 md:p-2 relative overflow-hidden shadow-[0_0_30px_rgba(0,0,0,0.5)] min-h-0`}>
                                         <div className="absolute inset-0 opacity-10" style={{ backgroundImage: 'linear-gradient(#334155 1px, transparent 1px), linear-gradient(90deg, #334155 1px, transparent 1px)', backgroundSize: '20px 20px'}}></div>
+                                        
+                                        {/* TOAST INDICADOR DE IMPACTO EN LA ESQUINA SUPERIOR DERECHA DE LA DIANA */}
+                                        {showTargetToast && (
+                                            <div key={showTargetToast.id} className={`absolute top-4 right-4 z-20 bg-slate-950/90 border-2 ${showTargetToast.colorClass} rounded-2xl px-6 py-4 flex flex-col items-center justify-center animate-toast backdrop-blur-sm`}>
+                                                <span className="text-[10px] md:text-xs text-slate-300 font-bold uppercase tracking-widest mb-1">Has marcado</span>
+                                                <span className="text-2xl md:text-4xl font-black leading-none">{showTargetToast.text}</span>
+                                            </div>
+                                        )}
+
                                         <svg viewBox="0 0 340 340" className="w-full h-full object-contain drop-shadow-[0_0_30px_rgba(0,0,0,0.8)] z-10" style={{ touchAction: 'none' }}>
                                             <circle cx={cx} cy={cy} r={maxR + 25} fill="#020617" />
                                             {SECTORS.map((sector, i) => {

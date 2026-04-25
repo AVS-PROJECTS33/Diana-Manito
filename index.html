@@ -11,21 +11,23 @@
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 
     <style>
-        body {
+        /* Bloqueo total y absoluto del scroll para entorno de Tablet/Kiosko */
+        body, html {
             background-color: #020617; 
             user-select: none; 
             -webkit-user-select: none;
             font-family: system-ui, -apple-system, sans-serif;
-            overflow: hidden; 
+            overflow: hidden !important; 
+            width: 100vw;
+            height: 100vh;
+            margin: 0;
+            padding: 0;
+            touch-action: none; /* Bloquea gestos del navegador */
         }
-        
-        ::-webkit-scrollbar { width: 6px; height: 6px; }
-        ::-webkit-scrollbar-track { background: #0f172a; }
-        ::-webkit-scrollbar-thumb { background: #06b6d4; border-radius: 4px; }
     </style>
 </head>
 <body>
-    <div id="root"></div>
+    <div id="root" class="w-full h-full"></div>
 
     <script type="text/babel">
         const { useState, useEffect } = React;
@@ -76,14 +78,21 @@
             const [winner, setWinner] = useState(null);
             const [round, setRound] = useState(1);
             const [isBust, setIsBust] = useState(false);
-            const [showExitConfirm, setShowExitConfirm] = useState(false); // Estado para confirmación de salida
+            const [showExitConfirm, setShowExitConfirm] = useState(false);
 
             const GAME_MODES = {
-                'cut_throat': { name: 'Cut Throat Cricket', desc: 'Suma a los rivales. Gana el que cierra todo y tiene MENOS puntos.' },
-                'normal_cricket': { name: 'Cricket (Puntos)', desc: 'Suma para ti. Gana el que cierra todo y tiene MÁS puntos.' },
+                'cut_throat': { name: 'Cricket Inverso', desc: 'Cerrar del 15 al 20. Al darle a un número cerrado, SUMAS PUNTOS A LOS RIVALES. Gana el que cierra todo con menos puntos.' },
+                'normal_cricket': { name: 'Cricket (Puntos)', desc: 'Cerrar del 15 al 20. Al darle a un número cerrado, TE SUMAS PUNTOS A TI MISMO. Gana el que cierra todo con más puntos.' },
                 '301': { name: '301', desc: 'Llega a 0 exacto. Si te pasas, haces BUST.' },
                 '501': { name: '501', desc: 'El clásico de torneo. Llega a 0 exacto.' },
-                'high_score': { name: 'High Score (7 Rondas)', desc: '7 Rondas. Todos los números valen. Gana el de MAYOR puntuación.' }
+                'high_score': { name: 'High Score', desc: '7 Rondas. Todos los números valen. Gana el de MAYOR puntuación.' }
+            };
+
+            // Helpers de Layout
+            const getDynamicGridClass = (totalItems) => {
+                if (totalItems <= 3) return `grid-cols-${totalItems} grid-rows-1`;
+                if (totalItems === 4) return 'grid-cols-2 grid-rows-2';
+                return 'grid-cols-3 grid-rows-2'; // Para 5 y 6 jugadores, máximo 3 columnas
             };
 
             const handleGoToNames = () => {
@@ -96,7 +105,7 @@
                 
                 const newPlayers = tempNames.map((name, i) => ({
                     id: i,
-                    name: name.trim() || `JUGADOR ${i + 1}`,
+                    name: name.trim() || `Jugador ${i + 1}`,
                     score: initialScore, 
                     previousRoundScore: initialScore,
                     marks: { 20: 0, 19: 0, 18: 0, 17: 0, 16: 0, 15: 0, 25: 0 }
@@ -116,7 +125,7 @@
             const handleHit = (sector, multiplier) => {
                 if (currentTurnThrows.length >= 3 || winner || isBust) return;
                 
-                const isCricket = gameMode.includes('cricket');
+                const isCricket = gameMode.includes('cricket') || gameMode === 'cut_throat';
                 
                 if (isCricket && !CRICKET_NUMBERS.includes(sector)) {
                     handleMiss();
@@ -252,7 +261,7 @@
 
                 let possibleWinner = null;
                 
-                if (gameMode.includes('cricket')) {
+                if (gameMode.includes('cricket') || gameMode === 'cut_throat') {
                     possibleWinner = checkWinnerCricket(updatedPlayers, gameMode === 'cut_throat');
                 } else if (gameMode === 'high_score') {
                     if (currentPlayerIdx === players.length - 1 && round === 7) {
@@ -271,33 +280,36 @@
                 }
             };
 
+            // --- VISTAS ---
+
             const renderConfig = () => (
-                <div className="flex flex-col items-center justify-center min-h-screen p-4 relative bg-slate-950 overflow-y-auto">
+                <div className="flex-1 flex flex-col items-center justify-center p-4 relative min-h-0">
                     <div className="absolute inset-0 opacity-20 bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-cyan-900 via-slate-900 to-black pointer-events-none"></div>
-                    <div className="z-10 w-full max-w-md bg-slate-900/90 p-8 rounded-3xl border border-cyan-500/30 shadow-[0_0_40px_rgba(6,182,212,0.15)] mt-8 mb-8">
-                        <div className="flex justify-center mb-6"><IconTarget size={80} className="text-cyan-400 drop-shadow-[0_0_15px_rgba(6,182,212,0.8)]" /></div>
-                        <h1 className="text-4xl font-black text-center mb-8 tracking-wider text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-fuchsia-500">CYBER DARTS</h1>
+                    <div className="z-10 w-full max-w-md bg-slate-900/90 p-8 rounded-3xl border border-cyan-500/30 shadow-[0_0_40px_rgba(6,182,212,0.15)] flex flex-col min-h-0">
+                        <div className="flex justify-center mb-4 shrink-0"><IconTarget size={80} className="text-cyan-400 drop-shadow-[0_0_15px_rgba(6,182,212,0.8)]" /></div>
+                        <h1 className="text-4xl font-black text-center mb-6 tracking-wider text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-fuchsia-500 shrink-0">CYBER DARTS</h1>
                         
-                        <div className="space-y-6">
+                        <div className="flex flex-col gap-4 flex-1 overflow-hidden justify-center">
                             <div>
-                                <label className="block text-fuchsia-400 text-sm font-bold mb-2 uppercase flex items-center gap-2"><IconGamepad size={16}/> Juego</label>
-                                <select value={gameMode} onChange={(e) => setGameMode(e.target.value)} className="w-full bg-slate-950 border-2 border-slate-700 text-white p-4 rounded-xl text-xl font-bold text-center appearance-none cursor-pointer focus:border-fuchsia-500 focus:outline-none">
-                                    <option value="cut_throat">CUT THROAT CRICKET</option>
+                                <label className="block text-fuchsia-400 text-sm font-bold mb-1 uppercase flex items-center gap-2"><IconGamepad size={16}/> Juego</label>
+                                <select value={gameMode} onChange={(e) => setGameMode(e.target.value)} className="w-full bg-slate-950 border-2 border-slate-700 text-white p-3 rounded-xl text-lg font-bold text-center appearance-none cursor-pointer focus:border-fuchsia-500 focus:outline-none">
+                                    <option value="cut_throat">CRICKET INVERSO</option>
                                     <option value="normal_cricket">CRICKET (PUNTOS)</option>
                                     <option value="301">301</option>
                                     <option value="501">501</option>
                                     <option value="high_score">HIGH SCORE (7 Rondas)</option>
                                 </select>
-                                <p className="text-slate-400 text-xs mt-2 text-center h-8">{GAME_MODES[gameMode].desc}</p>
+                                <p className="text-slate-400 text-xs mt-2 text-center h-8 flex items-center justify-center px-2">{GAME_MODES[gameMode].desc}</p>
                             </div>
 
                             <div>
-                                <label className="block text-cyan-400 text-sm font-bold mb-2 uppercase flex items-center gap-2"><IconUsers size={16}/> Jugadores</label>
-                                <select value={numPlayers} onChange={(e) => setNumPlayers(Number(e.target.value))} className="w-full bg-slate-950 border-2 border-slate-700 text-white p-4 rounded-xl text-xl font-bold text-center cursor-pointer focus:border-cyan-500 focus:outline-none">
+                                <label className="block text-cyan-400 text-sm font-bold mb-1 uppercase flex items-center gap-2"><IconUsers size={16}/> Jugadores</label>
+                                <select value={numPlayers} onChange={(e) => setNumPlayers(Number(e.target.value))} className="w-full bg-slate-950 border-2 border-slate-700 text-white p-3 rounded-xl text-lg font-bold text-center cursor-pointer focus:border-cyan-500 focus:outline-none">
                                     {[1, 2, 3, 4, 5, 6].map(n => <option key={n} value={n}>{n} {n === 1 ? 'Jugador' : 'Jugadores'}</option>)}
                                 </select>
                             </div>
-                            <button onClick={handleGoToNames} className="w-full mt-4 bg-gradient-to-r from-cyan-500 to-blue-600 text-white font-black py-4 px-6 rounded-xl flex items-center justify-center gap-3 text-xl uppercase active:scale-95 transition-transform">
+                            
+                            <button onClick={handleGoToNames} className="w-full mt-2 bg-gradient-to-r from-cyan-500 to-blue-600 text-white font-black py-4 px-6 rounded-xl flex items-center justify-center gap-3 text-xl uppercase active:scale-95 transition-transform shrink-0">
                                 Siguiente <IconArrowRight size={24} />
                             </button>
                         </div>
@@ -306,22 +318,25 @@
             );
 
             const renderNames = () => (
-                <div className="flex flex-col items-center justify-center min-h-screen p-4 relative bg-slate-950 overflow-y-auto">
-                    <div className="z-10 w-full max-w-md bg-slate-900/90 p-8 rounded-3xl border border-fuchsia-500/30 shadow-[0_0_40px_rgba(236,72,153,0.15)] mt-8 mb-8">
-                        <h2 className="text-3xl font-black text-center mb-6 text-fuchsia-400">NOMBRES</h2>
-                        <div className="space-y-4 max-h-[50vh] overflow-y-auto pr-2 pb-2">
+                <div className="flex-1 flex flex-col items-center justify-center p-4 relative min-h-0">
+                    <div className="z-10 w-full max-w-2xl bg-slate-900/90 p-6 rounded-3xl border border-fuchsia-500/30 shadow-[0_0_40px_rgba(236,72,153,0.15)] flex flex-col min-h-0">
+                        <h2 className="text-3xl font-black text-center mb-6 text-fuchsia-400 shrink-0">NOMBRES</h2>
+                        
+                        {/* Grid inteligente para que los nombres encajen en columnas si son muchos */}
+                        <div className={`grid gap-3 w-full flex-1 min-h-0 ${getDynamicGridClass(numPlayers)} content-center`}>
                             {tempNames.map((name, i) => (
-                                <div key={i} className="relative">
+                                <div key={i} className="relative h-full">
                                     <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none"><IconUser size={20} className="text-slate-500" /></div>
                                     <input type="text" placeholder={`Jugador ${i + 1}`} value={name} onChange={(e) => {
                                         const newNames = [...tempNames];
                                         newNames[i] = e.target.value.toUpperCase();
                                         setTempNames(newNames);
-                                    }} className="w-full bg-slate-950 border-2 border-slate-700 text-cyan-300 pl-12 pr-4 py-4 rounded-xl text-lg font-bold uppercase focus:border-fuchsia-500 focus:outline-none"/>
+                                    }} className="w-full h-full bg-slate-950 border-2 border-slate-700 text-cyan-300 pl-12 pr-4 py-3 rounded-xl text-lg font-bold uppercase focus:border-fuchsia-500 focus:outline-none"/>
                                 </div>
                             ))}
                         </div>
-                        <div className="flex gap-4 mt-6">
+                        
+                        <div className="flex gap-4 mt-6 shrink-0">
                             <button onClick={() => setAppState('setup_config')} className="flex-1 bg-slate-800 text-white font-bold py-4 rounded-xl active:bg-slate-700">Atrás</button>
                             <button onClick={initPlayers} className="flex-[2] bg-gradient-to-r from-fuchsia-600 to-purple-600 text-white font-black py-4 rounded-xl flex items-center justify-center gap-2 text-lg uppercase active:scale-95 transition-transform shadow-[0_0_20px_rgba(236,72,153,0.4)]">
                                 <IconPlay size={20} /> Iniciar
@@ -339,11 +354,10 @@
                 const colors = { dark: '#0f172a', light: '#334155', double1: '#ec4899', double2: '#06b6d4', text: '#f8fafc' };
                 const getColors = (index) => ({ single: index % 2 === 0 ? colors.dark : colors.light, ring: index % 2 === 0 ? colors.double1 : colors.double2 });
 
-                // Renderizador de marcas adaptable (tamaño normal o mini)
                 const renderCricketMark = (count, isMini = false) => {
                     if (!count) return null;
-                    const textClass = isMini ? "text-lg md:text-xl" : "text-3xl md:text-4xl";
-                    const circleClass = isMini ? "w-6 h-6 md:w-8 md:h-8 border-2" : "w-10 h-10 md:w-12 md:h-12 border-[3px]";
+                    const textClass = isMini ? "text-lg md:text-xl" : "text-3xl md:text-4xl lg:text-5xl";
+                    const circleClass = isMini ? "w-6 h-6 md:w-8 md:h-8 border-2" : "w-10 h-10 md:w-14 md:h-14 border-[3px]";
                     
                     if (count === 1) return <span className={`${textClass} text-cyan-400 font-bold leading-none`}>/</span>;
                     if (count === 2) return <span className={`${textClass} text-cyan-400 font-bold leading-none`}>X</span>;
@@ -352,7 +366,7 @@
 
                 const currentPlayer = players[currentPlayerIdx];
                 const isTurnComplete = currentTurnThrows.length === 3 || isBust;
-                const isCricket = gameMode.includes('cricket');
+                const isCricket = gameMode.includes('cricket') || gameMode === 'cut_throat';
 
                 const currentTurnPoints = currentTurnThrows.reduce((sum, t) => sum + t.points, 0);
                 const getLiveScore = (p, idx) => {
@@ -363,15 +377,14 @@
                 };
 
                 return (
-                    <div className="flex flex-col h-screen w-full bg-slate-950 text-white relative">
+                    <div className="flex-1 flex flex-col min-h-0 w-full relative">
                         
-                        {/* MODAL DE CONFIRMACIÓN DE SALIDA */}
                         {showExitConfirm && (
-                            <div className="absolute inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-                                <div className="bg-slate-900 border border-slate-700 p-8 rounded-3xl max-w-sm w-full text-center shadow-2xl">
-                                    <h3 className="text-3xl font-black text-white mb-4">¿Terminar partida?</h3>
-                                    <p className="text-slate-400 mb-8 font-bold">Volverás a la pantalla de configuración y se perderá todo el progreso actual.</p>
-                                    <div className="flex gap-4">
+                            <div className="absolute inset-0 z-50 bg-black/90 backdrop-blur-md flex items-center justify-center p-4">
+                                <div className="bg-slate-900 border border-slate-700 p-8 rounded-3xl max-w-sm w-full text-center shadow-2xl flex flex-col">
+                                    <h3 className="text-3xl font-black text-white mb-4 shrink-0">¿Terminar partida?</h3>
+                                    <p className="text-slate-400 mb-8 font-bold flex-1">Volverás a la configuración y se perderá el progreso actual.</p>
+                                    <div className="flex gap-4 shrink-0">
                                         <button onClick={() => setShowExitConfirm(false)} className="flex-1 py-4 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-bold transition-colors">Cancelar</button>
                                         <button onClick={() => { setShowExitConfirm(false); setAppState('setup_config'); }} className="flex-1 py-4 rounded-xl bg-red-600 hover:bg-red-500 text-white font-black transition-colors shadow-[0_0_15px_rgba(220,38,38,0.4)]">Sí, terminar</button>
                                     </div>
@@ -379,64 +392,60 @@
                             </div>
                         )}
 
-                        {/* OVERLAY DE VICTORIA */}
                         {winner && (
                             <div className="absolute inset-0 z-40 bg-black/90 backdrop-blur-md flex flex-col items-center justify-center p-4">
-                                <IconTrophy size={120} className="text-yellow-400 drop-shadow-[0_0_40px_rgba(250,204,21,0.8)] mb-6 animate-bounce" />
-                                <h1 className="text-5xl md:text-7xl font-black text-transparent bg-clip-text bg-gradient-to-r from-yellow-300 to-yellow-600 text-center mb-4 uppercase">
+                                <IconTrophy size={100} className="text-yellow-400 drop-shadow-[0_0_40px_rgba(250,204,21,0.8)] mb-4 animate-bounce shrink-0" />
+                                <h1 className="text-5xl md:text-7xl lg:text-8xl font-black text-transparent bg-clip-text bg-gradient-to-r from-yellow-300 to-yellow-600 text-center mb-4 uppercase shrink-0">
                                     ¡{winner.name} GANA!
                                 </h1>
                                 {gameMode !== '301' && gameMode !== '501' && (
-                                    <p className="text-4xl text-slate-300 mb-12 font-black border-2 border-yellow-500/50 p-6 rounded-2xl bg-yellow-900/20">{winner.score} pts</p>
+                                    <p className="text-4xl lg:text-5xl text-slate-300 mb-8 font-black border-2 border-yellow-500/50 p-6 rounded-2xl bg-yellow-900/20 shrink-0">{winner.score} pts</p>
                                 )}
-                                
-                                <div className="flex gap-4">
+                                <div className="flex gap-4 shrink-0 mt-auto">
                                     <button onClick={initPlayers} className="bg-slate-800 hover:bg-slate-700 text-white font-bold py-4 px-8 rounded-xl transition-colors text-xl">Revancha</button>
                                     <button onClick={() => setAppState('setup_config')} className="bg-gradient-to-r from-cyan-500 to-blue-600 text-white font-black py-4 px-8 rounded-xl shadow-[0_0_20px_rgba(6,182,212,0.4)] transition-transform active:scale-95 text-xl">Nuevo Juego</button>
                                 </div>
                             </div>
                         )}
 
-                        {/* NAVEGACIÓN POR PESTAÑAS (TABS) Y BOTÓN SALIR */}
-                        <div className="flex bg-slate-900 p-2 gap-2 border-b border-slate-800 shrink-0 shadow-md z-20">
-                            <button onClick={() => setActiveTab('board')} className={`flex-1 py-3 md:py-4 rounded-xl font-black flex justify-center items-center gap-2 transition-all ${activeTab === 'board' ? 'bg-cyan-500 text-slate-950 shadow-[0_0_15px_rgba(6,182,212,0.5)] scale-[1.02]' : 'bg-slate-800 text-slate-400 hover:bg-slate-700'}`}>
-                                <IconTarget size={20} /> <span className="text-sm md:text-base">MARCAR TIRADA</span>
+                        {/* NAVEGACIÓN TABS Y SALIR */}
+                        <div className="flex bg-slate-900 p-2 gap-2 border-b border-slate-800 shrink-0 shadow-md z-20 h-16 md:h-20">
+                            <button onClick={() => setActiveTab('board')} className={`flex-1 h-full rounded-xl font-black flex justify-center items-center gap-2 transition-all ${activeTab === 'board' ? 'bg-cyan-500 text-slate-950 shadow-[0_0_15px_rgba(6,182,212,0.5)] scale-[1.02]' : 'bg-slate-800 text-slate-400 hover:bg-slate-700'}`}>
+                                <IconTarget size={20} /> <span className="text-xs md:text-base">MARCAR TIRADA</span>
                             </button>
-                            <button onClick={() => setActiveTab('scores')} className={`flex-1 py-3 md:py-4 rounded-xl font-black flex justify-center items-center gap-2 transition-all ${activeTab === 'scores' ? 'bg-fuchsia-500 text-white shadow-[0_0_15px_rgba(236,72,153,0.5)] scale-[1.02]' : 'bg-slate-800 text-slate-400 hover:bg-slate-700'}`}>
-                                <IconList size={20} /> <span className="text-sm md:text-base">PUNTUACIONES</span>
+                            <button onClick={() => setActiveTab('scores')} className={`flex-1 h-full rounded-xl font-black flex justify-center items-center gap-2 transition-all ${activeTab === 'scores' ? 'bg-fuchsia-500 text-white shadow-[0_0_15px_rgba(236,72,153,0.5)] scale-[1.02]' : 'bg-slate-800 text-slate-400 hover:bg-slate-700'}`}>
+                                <IconList size={20} /> <span className="text-xs md:text-base">PUNTUACIONES</span>
                             </button>
-                            <button onClick={() => setShowExitConfirm(true)} className="px-4 py-3 md:py-4 rounded-xl font-black bg-red-900/30 text-red-500 hover:bg-red-600 hover:text-white border border-red-900/50 transition-colors flex items-center justify-center">
-                                <IconPower size={20} />
+                            <button onClick={() => setShowExitConfirm(true)} className="w-16 md:w-20 h-full rounded-xl font-black bg-red-900/30 text-red-500 hover:bg-red-600 hover:text-white border border-red-900/50 transition-colors flex items-center justify-center">
+                                <IconPower size={24} />
                             </button>
                         </div>
 
-                        {/* ÁREA DE CONTENIDO */}
-                        <div className="flex-1 overflow-y-auto relative p-2 md:p-4">
+                        {/* ÁREA FLEXIBLE PARA EL CONTENIDO (100% alto restante) */}
+                        <div className="flex-1 min-h-0 flex flex-col p-2 md:p-3">
                             
-                            {/* PESTAÑA 1: DIANA Y TIRADAS */}
+                            {/* PESTAÑA 1: DIANA */}
                             {activeTab === 'board' && (
-                                <div className="flex flex-col md:flex-row gap-4 h-full">
-                                    {/* DIANA GIGANTE */}
-                                    <div className="w-full md:flex-[5] lg:flex-[3] flex items-center justify-center bg-slate-900 rounded-3xl border border-slate-800 p-2 min-h-[40vh] md:min-h-0 relative overflow-hidden shadow-inner">
+                                <div className="flex flex-row gap-2 md:gap-4 h-full w-full min-h-0">
+                                    
+                                    {/* IZQ: DIANA GIGANTE */}
+                                    <div className="flex-[3] h-full flex items-center justify-center bg-slate-900 rounded-3xl border border-slate-800 p-2 relative overflow-hidden shadow-inner min-h-0">
                                         <div className="absolute inset-0 opacity-5" style={{ backgroundImage: 'linear-gradient(#334155 1px, transparent 1px), linear-gradient(90deg, #334155 1px, transparent 1px)', backgroundSize: '20px 20px'}}></div>
-                                        <svg viewBox="0 0 340 340" className="w-full h-full max-h-[45vh] md:max-h-[85vh] drop-shadow-[0_0_20px_rgba(0,0,0,1)] z-10" style={{ touchAction: 'none' }}>
+                                        <svg viewBox="0 0 340 340" className="w-full h-full object-contain drop-shadow-[0_0_20px_rgba(0,0,0,1)] z-10" style={{ touchAction: 'none' }}>
                                             <circle cx={cx} cy={cy} r={maxR + 25} fill="#020617" />
                                             {SECTORS.map((sector, i) => {
                                                 const startAngle = i * 18 - 9, endAngle = i * 18 + 9, textAngle = i * 18;
                                                 const textPos = polarToCartesian(cx, cy, maxR + 15, textAngle);
                                                 const { single, ring } = getColors(i);
-                                                
                                                 const isValidTarget = !isCricket || CRICKET_NUMBERS.includes(sector);
-                                                const textColor = isValidTarget ? colors.text : '#475569';
-                                                const fw = isValidTarget ? "900" : "500";
-
+                                                
                                                 return (
                                                     <g key={`sector-${sector}`}>
                                                         <path d={describeArc(cx, cy, rTreble, rOuterSingle, startAngle, endAngle)} fill={single} stroke="#1e293b" strokeWidth="0.5" onClick={() => handleHit(sector, 1)} />
                                                         <path d={describeArc(cx, cy, rOuterBull, rInnerSingle, startAngle, endAngle)} fill={single} stroke="#1e293b" strokeWidth="0.5" onClick={() => handleHit(sector, 1)} />
                                                         <path d={describeArc(cx, cy, rOuterSingle, rDouble, startAngle, endAngle)} fill={ring} stroke="#0f172a" strokeWidth="1" onClick={() => handleHit(sector, 2)} />
                                                         <path d={describeArc(cx, cy, rInnerSingle, rTreble, startAngle, endAngle)} fill={ring} stroke="#0f172a" strokeWidth="1" onClick={() => handleHit(sector, 3)} />
-                                                        <text x={textPos.x} y={textPos.y} fontSize="16" fill={textColor} textAnchor="middle" dominantBaseline="middle" fontWeight={fw}>{sector}</text>
+                                                        <text x={textPos.x} y={textPos.y} fontSize="16" fill={isValidTarget ? colors.text : '#475569'} textAnchor="middle" dominantBaseline="middle" fontWeight={isValidTarget ? "900" : "500"}>{sector}</text>
                                                     </g>
                                                 );
                                             })}
@@ -445,140 +454,134 @@
                                         </svg>
                                     </div>
 
-                                    {/* PANEL LATERAL: CONTROLES Y MINI MARCADOR */}
-                                    <div className="w-full md:flex-[4] lg:flex-[2] flex flex-col gap-3 h-full overflow-hidden">
+                                    {/* DER: PANEL DE CONTROLES */}
+                                    <div className="flex-[2] h-full flex flex-col gap-2 min-h-0">
                                         
-                                        {/* Acciones de la tirada */}
-                                        <div className={`bg-slate-900 border ${isBust ? 'border-red-500 shadow-[0_0_30px_rgba(239,68,68,0.2)]' : 'border-slate-800 shadow-xl'} p-4 md:p-5 rounded-2xl flex flex-col transition-colors shrink-0`}>
-                                            <div className="flex justify-between items-center mb-4">
-                                                <div className="flex-1 overflow-hidden">
+                                        {/* CONTROLES SUPERIORES */}
+                                        <div className={`bg-slate-900 border ${isBust ? 'border-red-500' : 'border-slate-800'} p-3 rounded-2xl flex flex-col shrink-0`}>
+                                            <div className="flex justify-between items-center mb-2">
+                                                <div className="flex-1 min-w-0">
                                                     <span className="text-slate-400 text-[10px] md:text-xs uppercase font-bold tracking-widest block mb-1">
                                                         Turno de {gameMode === 'high_score' && <span className="text-fuchsia-400">- R{round}/7</span>}
                                                     </span>
-                                                    <h3 className="text-2xl md:text-3xl lg:text-4xl font-black text-cyan-400 truncate leading-none">{currentPlayer.name}</h3>
+                                                    <h3 className="text-xl md:text-3xl font-black text-cyan-400 truncate leading-tight">{currentPlayer.name}</h3>
                                                 </div>
-                                                <div className="flex gap-2 shrink-0 ml-2">
+                                                <div className="flex gap-1 md:gap-2 shrink-0 ml-2">
                                                     {[0, 1, 2].map(i => {
                                                         const isThrown = i < currentTurnThrows.length;
-                                                        return <div key={i} className={`w-10 h-10 md:w-12 md:h-12 rounded-full flex items-center justify-center border-2 transition-all ${isThrown ? (isBust ? 'border-red-500 bg-red-500/20' : 'border-fuchsia-500 bg-fuchsia-500/20 shadow-[0_0_15px_rgba(236,72,153,0.5)]') : 'border-slate-700 bg-slate-800'}`}><IconDart size={18} className={isThrown ? (isBust ? 'text-red-400' : 'text-fuchsia-400') : 'text-slate-600'} /></div>;
+                                                        return <div key={i} className={`w-8 h-8 md:w-12 md:h-12 rounded-full flex items-center justify-center border-2 transition-all ${isThrown ? (isBust ? 'border-red-500 bg-red-500/20' : 'border-fuchsia-500 bg-fuchsia-500/20') : 'border-slate-700 bg-slate-800'}`}><IconDart size={16} className={isThrown ? (isBust ? 'text-red-400' : 'text-fuchsia-400') : 'text-slate-600'} /></div>;
                                                     })}
                                                 </div>
                                             </div>
 
                                             <div className="flex flex-col gap-2">
-                                                <div className="flex gap-2">
-                                                    <div className={`flex-[2] bg-slate-950 border ${isBust ? 'border-red-500/50' : 'border-slate-800'} rounded-xl p-2 flex items-center justify-center h-14 relative overflow-hidden`}>
-                                                        {isBust ? (
-                                                            <span className="text-xl font-black text-red-500 animate-pulse text-center leading-none">¡BUST!</span>
-                                                        ) : lastHit ? (
-                                                            <span className="text-xl md:text-2xl font-black text-white z-10 text-center leading-none">{lastHit.text}</span>
-                                                        ) : (
-                                                            <span className="text-slate-600 font-bold text-sm z-10">Toca la diana</span>
-                                                        )}
+                                                <div className="flex gap-2 h-12 md:h-14">
+                                                    <div className={`flex-[2] bg-slate-950 border ${isBust ? 'border-red-500/50' : 'border-slate-800'} rounded-xl p-1 flex items-center justify-center relative overflow-hidden h-full`}>
+                                                        {isBust ? <span className="text-lg font-black text-red-500 animate-pulse text-center leading-none">BUST</span>
+                                                                : lastHit ? <span className="text-lg md:text-xl font-black text-white text-center leading-none">{lastHit.text}</span>
+                                                                          : <span className="text-slate-600 font-bold text-xs">Toca la diana</span>}
                                                     </div>
-                                                    <button onClick={handleMiss} disabled={isTurnComplete || winner} className="flex-1 h-14 rounded-xl bg-red-900/20 text-red-400 border border-red-900/50 font-bold text-sm md:text-base flex items-center justify-center disabled:opacity-30 active:bg-red-900/40 transition-colors">
+                                                    <button onClick={handleMiss} disabled={isTurnComplete || winner} className="flex-1 rounded-xl bg-red-900/20 text-red-400 border border-red-900/50 font-bold text-xs md:text-sm flex items-center justify-center disabled:opacity-30 active:bg-red-900/40 h-full">
                                                         Fallo
                                                     </button>
                                                 </div>
-                                                <div className="flex gap-2">
-                                                    <button onClick={undoThrow} disabled={currentTurnThrows.length === 0 || winner} className="h-14 flex-1 rounded-xl bg-slate-800 text-slate-300 font-bold text-sm md:text-base flex gap-2 disabled:opacity-30 active:bg-slate-700 items-center justify-center transition-colors">
-                                                        <IconUndo size={18} /> <span className="hidden lg:inline">Deshacer</span>
+                                                <div className="flex gap-2 h-12 md:h-16">
+                                                    <button onClick={undoThrow} disabled={currentTurnThrows.length === 0 || winner} className="flex-1 rounded-xl bg-slate-800 text-slate-300 font-bold text-xs md:text-sm flex flex-col md:flex-row gap-1 items-center justify-center disabled:opacity-30 active:bg-slate-700 h-full">
+                                                        <IconUndo size={16} /> <span>Deshacer</span>
                                                     </button>
-                                                    <button onClick={endTurn} disabled={!isTurnComplete || winner} className={`h-14 flex-[2] rounded-xl font-black text-base md:text-lg flex items-center justify-center gap-2 transition-all ${isTurnComplete && !winner ? 'bg-gradient-to-r from-cyan-500 to-blue-600 text-white animate-pulse shadow-[0_0_15px_rgba(6,182,212,0.4)]' : 'bg-slate-800 text-slate-500 opacity-50 cursor-not-allowed'}`}>
-                                                        Siguiente <IconArrowRight size={20} />
+                                                    <button onClick={endTurn} disabled={!isTurnComplete || winner} className={`flex-[2] rounded-xl font-black text-sm md:text-lg flex items-center justify-center gap-2 transition-all h-full ${isTurnComplete && !winner ? 'bg-gradient-to-r from-cyan-500 to-blue-600 text-white animate-pulse' : 'bg-slate-800 text-slate-500 opacity-50'}`}>
+                                                        Siguiente <IconArrowRight size={18} />
                                                     </button>
                                                 </div>
                                             </div>
                                         </div>
 
-                                        {/* ¡NUEVO! MINI MARCADOR EN VIVO DENTRO DE LA PESTAÑA DIANA */}
-                                        <div className="flex-1 bg-slate-950 border border-slate-800 rounded-2xl overflow-hidden flex flex-col min-h-[200px] shadow-lg">
-                                            <div className="bg-slate-900/80 px-4 py-2 border-b border-slate-800 flex justify-between items-center shrink-0">
-                                                <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">Marcador en vivo</span>
-                                                <span className="text-[10px] font-bold text-fuchsia-400 bg-fuchsia-900/30 px-2 py-0.5 rounded-full border border-fuchsia-900/50">
+                                        {/* MINI MARCADOR INFERIOR - COMPRESIÓN FLEX */}
+                                        <div className="flex-1 bg-slate-950 border border-slate-800 rounded-2xl overflow-hidden flex flex-col min-h-0 shadow-lg">
+                                            <div className="bg-slate-900/80 px-3 py-1.5 border-b border-slate-800 flex justify-between items-center shrink-0">
+                                                <span className="text-[10px] md:text-xs font-bold text-slate-400 uppercase tracking-widest">En vivo</span>
+                                                <span className="text-[9px] md:text-[10px] font-bold text-fuchsia-400 bg-fuchsia-900/30 px-2 rounded-full border border-fuchsia-900/50">
                                                     {GAME_MODES[gameMode].name}
                                                 </span>
                                             </div>
-                                            <div className="flex-1 overflow-auto p-1">
+                                            <div className="flex-1 min-h-0 flex flex-col p-0.5">
                                                 {isCricket ? (
-                                                    <table className="w-full text-center border-collapse text-sm">
-                                                        <thead className="bg-slate-900 sticky top-0 z-10 shadow-sm">
-                                                            <tr>
-                                                                <th className="p-1.5 border-b border-slate-700 text-slate-500 w-10 text-[10px] uppercase">Nº</th>
-                                                                {players.map((p, i) => <th key={p.id} className={`p-1.5 border-b border-slate-700 truncate max-w-[50px] text-xs font-black ${i === currentPlayerIdx ? 'text-cyan-400 bg-cyan-950/20' : 'text-slate-300'}`}>{p.name.substring(0,4)}</th>)}
+                                                    <table className="w-full h-full text-center border-collapse table-fixed flex-1">
+                                                        <thead>
+                                                            <tr className="h-[10%]">
+                                                                <th className="border-b border-slate-700 text-slate-500 w-8 md:w-12 text-[9px] md:text-[10px] uppercase">Nº</th>
+                                                                {players.map((p, i) => <th key={p.id} className={`border-b border-slate-700 truncate text-[10px] md:text-xs font-black ${i === currentPlayerIdx ? 'text-cyan-400 bg-cyan-950/20' : 'text-slate-300'}`}>{p.name.substring(0,4)}</th>)}
                                                             </tr>
                                                         </thead>
-                                                        <tbody>
-                                                            <tr className="bg-slate-900/50 border-b-2 border-cyan-900/50">
-                                                                <td className="p-1.5 border-b border-r border-slate-800 text-fuchsia-400 font-bold text-[10px] uppercase">PTS</td>
-                                                                {players.map((p, i) => <td key={`mini-pts-${p.id}`} className={`p-1.5 border-b border-slate-800 font-black text-white ${i === currentPlayerIdx ? 'bg-cyan-950/10' : ''}`}>{p.score}</td>)}
+                                                        <tbody className="h-[90%]">
+                                                            <tr className="bg-slate-900/50 border-b border-cyan-900/50">
+                                                                <td className="border-r border-slate-800 text-fuchsia-400 font-bold text-[9px] md:text-[10px] uppercase">PTS</td>
+                                                                {players.map((p, i) => <td key={`mini-pts-${p.id}`} className={`border-slate-800 font-black text-white text-xs md:text-sm ${i === currentPlayerIdx ? 'bg-cyan-950/10' : ''}`}>{p.score}</td>)}
                                                             </tr>
                                                             {CRICKET_NUMBERS.map(num => (
-                                                                <tr key={num} className="hover:bg-slate-800/50">
-                                                                    <td className="p-1 border-b border-r border-slate-800 text-slate-300 font-black text-sm">{num === 25 ? 'B' : num}</td>
-                                                                    {players.map((p, i) => <td key={`mini-${p.id}-${num}`} className={`p-1 border-b border-slate-800 h-8 relative ${i === currentPlayerIdx ? 'bg-cyan-950/10' : ''}`}>{renderCricketMark(p.marks[num], true)}</td>)}
+                                                                <tr key={num}>
+                                                                    <td className="border-t border-r border-slate-800 text-slate-300 font-black text-xs md:text-sm">{num === 25 ? 'B' : num}</td>
+                                                                    {players.map((p, i) => <td key={`mini-${p.id}-${num}`} className={`border-t border-slate-800 relative ${i === currentPlayerIdx ? 'bg-cyan-950/10' : ''}`}>{renderCricketMark(p.marks[num], true)}</td>)}
                                                                 </tr>
                                                             ))}
                                                         </tbody>
                                                     </table>
                                                 ) : (
-                                                    <div className="grid grid-cols-2 lg:grid-cols-3 gap-2 p-2">
+                                                    <div className={`grid gap-1.5 w-full h-full ${getDynamicGridClass(players.length)} p-1`}>
                                                         {players.map((p, i) => (
-                                                            <div key={p.id} className={`bg-slate-900/50 rounded-xl p-3 border flex flex-col items-center justify-center ${i === currentPlayerIdx ? 'border-cyan-500 bg-cyan-950/20' : 'border-slate-800'}`}>
-                                                                <span className={`text-[10px] md:text-xs font-bold uppercase tracking-widest mb-1 truncate w-full text-center ${i === currentPlayerIdx ? 'text-cyan-400' : 'text-slate-500'}`}>{p.name}</span>
-                                                                <span className={`text-2xl md:text-3xl font-black ${i === currentPlayerIdx ? 'text-white' : 'text-slate-400'}`}>{getLiveScore(p, i)}</span>
+                                                            <div key={p.id} className={`bg-slate-900/50 rounded-lg p-1 border flex flex-col items-center justify-center min-h-0 ${i === currentPlayerIdx ? 'border-cyan-500 bg-cyan-950/20' : 'border-slate-800'}`}>
+                                                                <span className={`text-[9px] md:text-[10px] font-bold uppercase tracking-widest truncate w-full text-center shrink-0 ${i === currentPlayerIdx ? 'text-cyan-400' : 'text-slate-500'}`}>{p.name}</span>
+                                                                <span className={`text-xl md:text-3xl lg:text-4xl font-black min-h-0 ${i === currentPlayerIdx ? 'text-white' : 'text-slate-400'}`}>{getLiveScore(p, i)}</span>
                                                             </div>
                                                         ))}
                                                     </div>
                                                 )}
                                             </div>
                                         </div>
+
                                     </div>
                                 </div>
                             )}
 
-                            {/* PESTAÑA 2: PUNTUACIONES GIGANTES */}
+                            {/* PESTAÑA 2: PUNTUACIONES GIGANTES COMPRIMIDAS */}
                             {activeTab === 'scores' && (
-                                <div className="h-full bg-slate-900 border border-slate-800 rounded-3xl overflow-hidden flex flex-col shadow-xl">
-                                    <div className="p-4 bg-slate-950 border-b border-slate-800 flex justify-between items-center shrink-0">
-                                        <h2 className="text-xl md:text-2xl font-black text-fuchsia-400 uppercase tracking-widest">{GAME_MODES[gameMode].name}</h2>
-                                        {!isCricket && <span className="text-sm font-bold text-slate-300 bg-slate-800 px-4 py-2 rounded-full border border-slate-700">Pts en ronda actual: <span className="text-cyan-400">+{currentTurnPoints}</span></span>}
+                                <div className="flex-1 flex flex-col bg-slate-900 border border-slate-800 rounded-3xl overflow-hidden shadow-xl min-h-0">
+                                    <div className="p-3 md:p-4 bg-slate-950 border-b border-slate-800 flex justify-between items-center shrink-0">
+                                        <h2 className="text-lg md:text-xl font-black text-fuchsia-400 uppercase tracking-widest">{GAME_MODES[gameMode].name}</h2>
+                                        {!isCricket && <span className="text-xs md:text-sm font-bold text-slate-300 bg-slate-800 px-3 md:px-4 py-1.5 md:py-2 rounded-full border border-slate-700">Pts en ronda: <span className="text-cyan-400">+{currentTurnPoints}</span></span>}
                                     </div>
                                     
-                                    <div className="flex-1 overflow-x-auto overflow-y-auto p-4 md:p-8 flex flex-col">
-                                        
-                                        {!isCricket && (
-                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 h-full">
+                                    <div className="flex-1 min-h-0 flex flex-col p-2 md:p-4">
+                                        {!isCricket ? (
+                                            <div className={`grid gap-3 md:gap-4 w-full h-full ${getDynamicGridClass(players.length)}`}>
                                                 {players.map((p, i) => (
-                                                    <div key={p.id} className={`bg-slate-950 rounded-3xl border-4 flex flex-col items-center justify-center p-8 ${i === currentPlayerIdx ? 'border-cyan-500 shadow-[0_0_30px_rgba(6,182,212,0.3)]' : 'border-slate-800'}`}>
-                                                        <span className={`text-xl md:text-2xl font-bold uppercase tracking-widest mb-4 ${i === currentPlayerIdx ? 'text-cyan-400' : 'text-slate-500'}`}>
+                                                    <div key={p.id} className={`bg-slate-950 rounded-2xl border-4 flex flex-col items-center justify-center min-h-0 p-2 md:p-4 ${i === currentPlayerIdx ? 'border-cyan-500 shadow-[0_0_20px_rgba(6,182,212,0.3)]' : 'border-slate-800'}`}>
+                                                        <span className={`text-sm md:text-xl font-bold uppercase tracking-widest mb-1 md:mb-2 shrink-0 ${i === currentPlayerIdx ? 'text-cyan-400' : 'text-slate-500'}`}>
                                                             {p.name} {i === currentPlayerIdx && '(Tirando)'}
                                                         </span>
-                                                        <span className={`text-8xl md:text-9xl font-black ${i === currentPlayerIdx ? 'text-white' : 'text-slate-400'}`}>
+                                                        <span className={`text-5xl md:text-7xl lg:text-8xl font-black min-h-0 ${i === currentPlayerIdx ? 'text-white' : 'text-slate-400'}`}>
                                                             {getLiveScore(p, i)}
                                                         </span>
                                                     </div>
                                                 ))}
                                             </div>
-                                        )}
-
-                                        {isCricket && (
-                                            <table className="w-full text-center border-collapse min-w-[500px] h-full">
-                                                <thead className="sticky top-0 bg-slate-900 z-10 shadow-md">
-                                                    <tr>
-                                                        <th className="p-4 border-b-4 border-r-2 border-slate-700 text-slate-500 w-24 text-xl bg-slate-950">Num</th>
-                                                        {players.map((p, i) => <th key={p.id} className={`p-4 border-b-4 border-r-2 border-slate-700 ${i === currentPlayerIdx ? 'text-cyan-400 bg-cyan-950/20' : 'text-white bg-slate-950'} font-black text-2xl md:text-3xl truncate max-w-[150px]`}>{p.name.substring(0,8)} {i === currentPlayerIdx && '*'}</th>)}
+                                        ) : (
+                                            <table className="w-full h-full text-center border-collapse table-fixed flex-1">
+                                                <thead>
+                                                    <tr className="h-[10%]">
+                                                        <th className="border-b-4 border-r-2 border-slate-700 text-slate-500 w-16 md:w-24 text-sm md:text-lg bg-slate-950">Num</th>
+                                                        {players.map((p, i) => <th key={p.id} className={`border-b-4 border-r-2 border-slate-700 ${i === currentPlayerIdx ? 'text-cyan-400 bg-cyan-950/20' : 'text-white bg-slate-950'} font-black text-sm md:text-2xl truncate`}>{p.name.substring(0,8)}</th>)}
                                                     </tr>
                                                 </thead>
-                                                <tbody>
+                                                <tbody className="h-[90%]">
                                                     <tr className="bg-slate-950/80 border-b-4 border-cyan-900">
-                                                        <td className="p-4 border-r-2 border-slate-800 font-black text-lg md:text-xl text-fuchsia-400 uppercase tracking-widest">PUNTOS</td>
-                                                        {players.map((p, i) => <td key={`score-${p.id}`} className={`p-4 border-r-2 border-slate-800 font-black text-4xl md:text-5xl text-white ${i === currentPlayerIdx ? 'bg-cyan-950/10' : ''}`}>{p.score}</td>)}
+                                                        <td className="border-r-2 border-slate-800 font-black text-xs md:text-sm text-fuchsia-400 uppercase tracking-widest">PUNTOS</td>
+                                                        {players.map((p, i) => <td key={`score-${p.id}`} className={`border-r-2 border-slate-800 font-black text-xl md:text-4xl text-white ${i === currentPlayerIdx ? 'bg-cyan-950/10' : ''}`}>{p.score}</td>)}
                                                     </tr>
                                                     {CRICKET_NUMBERS.map(num => (
-                                                        <tr key={num} className="hover:bg-slate-800/50 transition-colors">
-                                                            <td className="p-4 border-b-2 border-r-2 border-slate-800 font-black text-3xl md:text-4xl text-slate-300 bg-slate-950/50">{num === 25 ? 'Bull' : num}</td>
-                                                            {players.map((p, i) => <td key={`${p.id}-${num}`} className={`p-4 border-b-2 border-r-2 border-slate-800 h-16 relative ${i === currentPlayerIdx ? 'bg-cyan-950/10' : ''}`}>{renderCricketMark(p.marks[num])}</td>)}
+                                                        <tr key={num} className="transition-colors">
+                                                            <td className="border-t-2 border-r-2 border-slate-800 font-black text-xl md:text-3xl text-slate-300 bg-slate-950/50">{num === 25 ? 'Bull' : num}</td>
+                                                            {players.map((p, i) => <td key={`${p.id}-${num}`} className={`border-t-2 border-r-2 border-slate-800 relative ${i === currentPlayerIdx ? 'bg-cyan-950/10' : ''}`}>{renderCricketMark(p.marks[num])}</td>)}
                                                         </tr>
                                                     ))}
                                                 </tbody>
@@ -589,11 +592,23 @@
                             )}
 
                         </div>
+
                     </div>
                 );
             };
 
-            return <div className="h-screen w-full text-white selection:bg-cyan-500 selection:text-white bg-slate-950 overflow-hidden">{appState === 'setup_config' && renderConfig()}{appState === 'setup_names' && renderNames()}{appState === 'playing' && renderGame()}</div>;
+            return (
+                <div className="w-full h-full flex flex-col text-white selection:bg-cyan-500 selection:text-white bg-slate-950 overflow-hidden relative">
+                    {appState === 'setup_config' && renderConfig()}
+                    {appState === 'setup_names' && renderNames()}
+                    {appState === 'playing' && renderGame()}
+                    
+                    {/* VERSION TAG */}
+                    <div className="absolute bottom-1 md:bottom-2 right-2 md:right-4 text-cyan-800/50 font-mono text-[10px] md:text-xs font-bold tracking-widest z-50 pointer-events-none">
+                        AVS 1.1
+                    </div>
+                </div>
+            );
         }
 
         const root = ReactDOM.createRoot(document.getElementById('root'));

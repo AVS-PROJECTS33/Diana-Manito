@@ -14,11 +14,11 @@
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, doc, setDoc, onSnapshot, collection } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { getFirestore, doc, setDoc, getDoc, onSnapshot, collection } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
         window.fb = {
             initializeApp, getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged,
-            getFirestore, doc, setDoc, onSnapshot, collection
+            getFirestore, doc, setDoc, getDoc, onSnapshot, collection
         };
     </script>
 
@@ -90,6 +90,14 @@
             'around_the_clock': { name: 'Reloj (1 al 20)', desc: 'Acertar del 1 al 20 en orden consecutivo. Gana el primero que llega y acierta al 20.' }
         };
 
+        const getSectorText = (sector, multiplier) => {
+            if (sector === 0) return 'Fallo';
+            if (sector === 25) return multiplier === 1 ? 'Outer Bull' : 'Centro (Bull)';
+            if (multiplier === 2) return `Doble ${sector}`;
+            if (multiplier === 3) return `Triple ${sector}`;
+            return `${sector}`;
+        };
+
         function App() {
             // --- FIREBASE INITIALIZATION ---
             const [fbLoaded, setFbLoaded] = useState(false);
@@ -140,7 +148,7 @@
                 return () => clearInterval(checkFb);
             }, []);
 
-            // --- ESTADO ÚNICO DEL JUEGO (Fuente de la Verdad Sincronizada) ---
+            // --- ESTADO ÚNICO DEL JUEGO ---
             const [gameState, setGameState] = useState({
                 appState: 'home', 
                 gameMode: 'cut_throat',
@@ -153,10 +161,12 @@
                 winner: null,
                 round: 1,
                 isBust: false,
-                pendingConfirmation: false 
+                pendingConfirmation: false,
+                isNewRecord: false,
+                recordStatsText: null
             });
 
-            // Estados Locales (No se sincronizan, propios del dispositivo)
+            // Estados Locales
             const [isOnline, setIsOnline] = useState(false);
             const [roomId, setRoomId] = useState(null);
             const [localPlayerId, setLocalPlayerId] = useState(null); 
@@ -164,6 +174,9 @@
             const [tempNames, setTempNames] = useState(['', '']); 
             const [showExitConfirm, setShowExitConfirm] = useState(false);
             const [showQR, setShowQR] = useState(false);
+            const [hitFeedback, setHitFeedback] = useState(null);
+            const [previewText, setPreviewText] = useState(null); 
+            const [rankingsData, setRankingsData] = useState([]); 
 
             // --- SINCRONIZACIÓN CON FIREBASE ---
             useEffect(() => {
@@ -194,6 +207,75 @@
                 return () => unsub();
             }, [isOnline, roomId, firebaseDb, user]);
 
+            // --- CARGAR RANKINGS (Fondo siempre para comprobar records en directo) ---
+            useEffect(() => {
+                if (!firebaseDb) return;
+                const canvasAppId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+                const rankingsRef = typeof __firebase_config !== 'undefined'
+                    ? window.fb.collection(firebaseDb, 'artifacts', canvasAppId, 'public', 'data', 'rankings')
+                    : window.fb.collection(firebaseDb, 'rankings');
+
+                const unsub = window.fb.onSnapshot(rankingsRef, (snap) => {
+                    const data = [];
+                    snap.forEach(doc => data.push(doc.data()));
+                    setRankingsData(data);
+                }, (err) => console.error("Error cargando rankings:", err));
+
+                return () => unsub();
+            }, [firebaseDb]);
+
+            // --- GUARDAR ESTADÍSTICAS GLOBALES DE PARTIDA ÚNICA (Récord Personal y Global) ---
+            const saveStatsToFirebase = async (gamePlayers, mode, winPlayer) => {
+                if (!firebaseDb) return;
+                const canvasAppId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+                const isCricketMode = ['cut_throat', 'normal_cricket', 'no_score_cricket'].includes(mode);
+
+                for (const p of gamePlayers) {
+                    if (!p.matchStats || p.matchStats.darts === 0) continue; 
+
+                    // Calculamos la media (PPD/MPR) lograda SOLO en esta partida
+                    let matchScore = 0;
+                    if (isCricketMode) {
+                        matchScore = (p.matchStats.marks / p.matchStats.darts) * 3;
+                    } else {
+                        matchScore = p.matchStats.points / p.matchStats.darts;
+                    }
+
+                    const sanitizedName = p.name.replace(/[^a-zA-Z0-9]/g, '_').toUpperCase();
+                    const playerRef = typeof __firebase_config !== 'undefined'
+                        ? window.fb.doc(firebaseDb, 'artifacts', canvasAppId, 'public', 'data', 'rankings', sanitizedName)
+                        : window.fb.doc(firebaseDb, 'rankings', sanitizedName);
+
+                    try {
+                        const snap = await window.fb.getDoc(playerRef);
+                        let data = snap.exists() ? snap.data() : { name: p.name, stats: {} };
+                        
+                        if (!data.stats[mode]) data.stats[mode] = { bestScore: 0, wins: 0, games: 0 };
+                        
+                        // Capa de compatibilidad para datos antiguos que usaban acumulación
+                        if (data.stats[mode].bestScore === undefined) {
+                            if (data.stats[mode].darts > 0) {
+                                data.stats[mode].bestScore = isCricketMode 
+                                    ? (data.stats[mode].marks / data.stats[mode].darts) * 3 
+                                    : (data.stats[mode].points / data.stats[mode].darts);
+                            } else {
+                                data.stats[mode].bestScore = 0;
+                            }
+                        }
+
+                        // Si la media de esta partida es superior a su récord histórico guardado, se actualiza
+                        if (matchScore > data.stats[mode].bestScore) {
+                            data.stats[mode].bestScore = matchScore;
+                        }
+                        
+                        data.stats[mode].games += 1;
+                        if (winPlayer && winPlayer.id === p.id) data.stats[mode].wins += 1;
+
+                        await window.fb.setDoc(playerRef, data);
+                    } catch(e) { console.error("Error guardando stats:", e) }
+                }
+            };
+
             const updateGame = (updates) => {
                 setGameState(prev => {
                     const next = { ...prev, ...updates };
@@ -209,10 +291,15 @@
                 });
             };
 
+            // Grid Dinámico hasta 8 jugadores
             const getDynamicGridClass = (totalItems) => {
-                if (totalItems <= 3) return `grid-cols-${totalItems} grid-rows-1`;
+                if (totalItems === 1) return 'grid-cols-1 grid-rows-1';
+                if (totalItems === 2) return 'grid-cols-2 grid-rows-1';
+                if (totalItems === 3) return 'grid-cols-3 grid-rows-1';
                 if (totalItems === 4) return 'grid-cols-2 grid-rows-2';
-                return 'grid-cols-3 grid-rows-2'; 
+                if (totalItems === 5 || totalItems === 6) return 'grid-cols-3 grid-rows-2';
+                if (totalItems === 7 || totalItems === 8) return 'grid-cols-4 grid-rows-2';
+                return 'grid-cols-4 grid-rows-2'; 
             };
 
             const generateSafeQRUrl = () => {
@@ -220,8 +307,7 @@
                 return `${baseUrl}?room=${roomId}`;
             };
 
-            // --- LÓGICA DEL JUEGO ---
-            const { appState, gameMode, numPlayers, players, activeTab, currentPlayerIdx, currentTurnThrows, lastHit, winner, round, isBust, pendingConfirmation } = gameState;
+            const { appState, gameMode, numPlayers, players, activeTab, currentPlayerIdx, currentTurnThrows, lastHit, winner, round, isBust, pendingConfirmation, isNewRecord, recordStatsText } = gameState;
 
             const handleCreateRoom = () => {
                 const id = Math.random().toString(36).substring(2, 6).toUpperCase();
@@ -244,7 +330,8 @@
                     name: name.trim() || `Jugador ${i + 1}`,
                     score: initialScore, 
                     previousRoundScore: initialScore,
-                    marks: { 20: 0, 19: 0, 18: 0, 17: 0, 16: 0, 15: 0, 25: 0 }
+                    marks: { 20: 0, 19: 0, 18: 0, 17: 0, 16: 0, 15: 0, 25: 0 },
+                    matchStats: { darts: 0, points: 0, marks: 0 } 
                 }));
                 
                 updateGame({
@@ -257,34 +344,32 @@
                     isBust: false,
                     activeTab: 'board',
                     pendingConfirmation: false,
+                    isNewRecord: false,
+                    recordStatsText: null,
                     appState: isOnline ? 'setup_qr' : 'playing'
                 });
                 setShowExitConfirm(false);
             };
 
             const isActionAllowed = () => {
-                if (!joinedViaUrl) return true; // Tablet Host puede hacer todo
-                return localPlayerId === currentPlayerIdx; // El móvil solo puede accionar en su turno
+                if (!joinedViaUrl) return true; 
+                return localPlayerId === currentPlayerIdx; 
             };
 
             const handleHit = (sector, multiplier) => {
-                if (!isActionAllowed()) return;
-                if (currentTurnThrows.length >= 3 || winner || isBust || pendingConfirmation) return;
+                if (!isActionAllowed()) return false;
+                if (currentTurnThrows.length >= 3 || winner || isBust || pendingConfirmation) return false;
                 
                 const isCricket = ['cut_throat', 'normal_cricket', 'no_score_cricket'].includes(gameMode);
                 if (isCricket && !CRICKET_NUMBERS.includes(sector)) {
                     handleMiss();
-                    return;
+                    return true;
                 }
 
                 let points = sector * multiplier;
                 if (sector === 25) points = multiplier === 1 ? 25 : 50;
 
-                let text = `${sector}`;
-                if (multiplier === 2) text = `Doble ${sector}`;
-                if (multiplier === 3) text = `Triple ${sector}`;
-                if (sector === 25 && multiplier === 1) text = `Outer Bull`;
-                if (sector === 25 && multiplier === 2) text = `Centro (Bull)`;
+                let text = getSectorText(sector, multiplier);
 
                 const throwData = { sector, multiplier, points, text };
                 const newThrows = [...currentTurnThrows, throwData];
@@ -321,16 +406,19 @@
                     winner: newWinner,
                     players: newPlayers
                 });
+
+                return true; 
             };
 
             const handleMiss = () => {
-                if (!isActionAllowed()) return;
-                if (currentTurnThrows.length >= 3 || winner || isBust || pendingConfirmation) return;
+                if (!isActionAllowed()) return false;
+                if (currentTurnThrows.length >= 3 || winner || isBust || pendingConfirmation) return false;
                 const throwData = { sector: 0, multiplier: 0, points: 0, text: `Fallo (Fuera)` };
                 updateGame({
                     currentTurnThrows: [...currentTurnThrows, throwData],
                     lastHit: throwData
                 });
+                return true;
             };
 
             const undoThrow = () => {
@@ -381,9 +469,27 @@
             const endTurn = () => {
                 if (currentTurnThrows.length < 3 && !isBust) return;
 
-                let updatedPlayers = players.map(p => ({ ...p, marks: { ...p.marks } }));
+                let updatedPlayers = players.map(p => ({ ...p, marks: { ...p.marks }, matchStats: { ...p.matchStats } }));
                 let currentP = updatedPlayers[currentPlayerIdx];
-                const pointsScoredThisTurn = currentTurnThrows.reduce((sum, t) => sum + t.points, 0);
+                
+                const isCricketMode = ['cut_throat', 'normal_cricket', 'no_score_cricket'].includes(gameMode);
+                let pointsScoredThisTurn = 0;
+                let marksScoredThisTurn = 0;
+
+                currentTurnThrows.forEach(t => {
+                    pointsScoredThisTurn += t.points;
+                    if (isCricketMode && t.sector !== 0 && CRICKET_NUMBERS.includes(t.sector)) {
+                        marksScoredThisTurn += t.multiplier;
+                    }
+                });
+
+                if (isBust && ['301', '501', '701', '901'].includes(gameMode)) {
+                    pointsScoredThisTurn = 0;
+                }
+
+                currentP.matchStats.darts += currentTurnThrows.length;
+                currentP.matchStats.points += pointsScoredThisTurn;
+                currentP.matchStats.marks += marksScoredThisTurn;
 
                 if (['301', '501', '701', '901'].includes(gameMode)) {
                     if (isBust) {
@@ -457,6 +563,46 @@
                     nextPlayerIdx = (currentPlayerIdx + 1) % players.length;
                 }
 
+                let newIsRecord = isNewRecord;
+                let newRecordText = recordStatsText;
+
+                // Solo la tablet Host guarda datos en Firebase al ganar alguien
+                if (possibleWinner && !joinedViaUrl) {
+                    const isX01 = ['301', '501', '701', '901'].includes(gameMode);
+                    
+                    // Comprobar si hay nuevo récord histórico global
+                    if (isCricketMode || isX01) {
+                        let matchScore = 0;
+                        const pStats = possibleWinner.matchStats;
+                        if (pStats.darts > 0) {
+                            matchScore = isCricketMode ? ((pStats.marks / pStats.darts) * 3) : (pStats.points / pStats.darts);
+                        }
+
+                        let globalBest = 0;
+                        rankingsData.forEach(p => {
+                            if (p.stats && p.stats[gameMode]) {
+                                const s = p.stats[gameMode];
+                                let score = 0;
+                                if (s.bestScore !== undefined) {
+                                    score = s.bestScore;
+                                } else if (s.darts > 0) {
+                                    // Compatibilidad si hay records antiguos sin bestScore
+                                    score = isCricketMode ? ((s.marks / s.darts) * 3) : (s.points / s.darts);
+                                }
+                                if (score > globalBest) globalBest = score;
+                            }
+                        });
+
+                        // Si es el récord más alto de la base de datos (o la primera partida)
+                        if (matchScore > globalBest && matchScore > 0) {
+                            newIsRecord = true;
+                            newRecordText = matchScore.toFixed(2) + (isCricketMode ? ' MPR' : ' PPD');
+                        }
+                    }
+
+                    saveStatsToFirebase(updatedPlayers, gameMode, possibleWinner);
+                }
+
                 updateGame({
                     players: updatedPlayers,
                     currentTurnThrows: [],
@@ -464,6 +610,8 @@
                     isBust: false,
                     pendingConfirmation: false,
                     winner: possibleWinner || winner,
+                    isNewRecord: newIsRecord,
+                    recordStatsText: newRecordText,
                     currentPlayerIdx: nextPlayerIdx,
                     round: nextRound,
                     activeTab: 'board'
@@ -476,13 +624,21 @@
                 setRoomId(null);
             };
 
+            const triggerFeedback = (svgProps) => {
+                const id = Math.random();
+                setHitFeedback({ ...svgProps, id });
+                setTimeout(() => {
+                    setHitFeedback(prev => (prev?.id === id ? null : prev));
+                }, 200); 
+            };
+
             // --- VISTAS ---
 
             if (!fbLoaded) return <div className="h-screen w-full flex items-center justify-center bg-slate-950 text-cyan-400 font-bold tracking-widest uppercase">Inicializando Sistema...</div>;
 
             const renderHome = () => (
-                <div className="flex-1 flex flex-col items-center justify-center p-4 relative z-10">
-                    <div className="z-10 w-full max-w-lg bg-slate-900/80 backdrop-blur-xl p-8 rounded-3xl border border-cyan-500/30 shadow-[0_0_50px_rgba(6,182,212,0.2)] flex flex-col text-center">
+                <div className="flex-1 flex flex-col items-center justify-center p-4 relative z-10 overflow-y-auto">
+                    <div className="z-10 w-full max-w-lg bg-slate-900/80 backdrop-blur-xl p-8 rounded-3xl border border-cyan-500/30 shadow-[0_0_50px_rgba(6,182,212,0.2)] flex flex-col text-center my-auto">
                         <IconTarget size={80} className="text-cyan-400 mx-auto mb-4 drop-shadow-[0_0_15px_rgba(6,182,212,0.8)]" />
                         <h1 className="text-5xl font-black text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-fuchsia-500 mb-8 drop-shadow-md">MANITO'S DARTS</h1>
                         
@@ -496,13 +652,93 @@
                                 <div className="relative flex justify-center"><span className="bg-slate-900 px-4 text-xs font-bold text-slate-500 uppercase tracking-widest">MULTIJUGADOR ONLINE</span></div>
                             </div>
 
-                            <button onClick={handleCreateRoom} className="w-full bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white font-black py-4 px-6 rounded-xl flex items-center justify-center gap-3 text-lg uppercase transition-all shadow-[0_0_20px_rgba(6,182,212,0.4)]">
+                            <button onClick={handleCreateRoom} className="w-full bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white font-black py-4 px-6 rounded-xl flex items-center justify-center gap-3 text-lg uppercase transition-all shadow-[0_0_20px_rgba(6,182,212,0.4)] mb-2">
                                 <IconQrCode size={24} /> CREAR SALA (Host)
+                            </button>
+                            
+                            <button onClick={() => updateGame({ appState: 'ranking' })} className="w-full bg-gradient-to-r from-yellow-600 to-amber-700 hover:from-yellow-500 hover:to-amber-600 border border-yellow-400/50 text-white font-black py-4 px-6 rounded-xl flex items-center justify-center gap-3 text-lg uppercase transition-all shadow-[0_0_20px_rgba(202,138,4,0.4)]">
+                                <IconTrophy size={24} /> Ver Ranking Global
                             </button>
                         </div>
                     </div>
                 </div>
             );
+
+            const renderRanking = () => {
+                const getTop3 = (mode, metric) => {
+                    let playersInMode = rankingsData.filter(p => p.stats && p.stats[mode]);
+                    
+                    let scoredPlayers = playersInMode.map(p => {
+                        const s = p.stats[mode];
+                        let score = 0;
+                        if (s.bestScore !== undefined) {
+                            score = s.bestScore;
+                        } else if (s.darts > 0) { // Legacy
+                            score = metric === 'MPR' ? (s.marks / s.darts) * 3 : (s.points / s.darts);
+                        }
+                        let displayScore = score.toFixed(2) + " " + metric;
+                        return { name: p.name, score, displayScore, games: s.games, wins: s.wins };
+                    });
+
+                    // Filtramos los que tengan más de 0 y los ordenamos
+                    scoredPlayers = scoredPlayers.filter(p => p.score > 0).sort((a, b) => b.score - a.score);
+                    return scoredPlayers.slice(0, 3);
+                };
+
+                const renderModeCard = (modeId, metric) => {
+                    const top = getTop3(modeId, metric);
+                    return (
+                        <div key={modeId} className="bg-slate-900/80 border border-slate-700/50 rounded-2xl p-4 shadow-lg backdrop-blur-sm flex flex-col">
+                            <h4 className="text-cyan-400 font-black text-lg md:text-xl mb-3 text-center uppercase border-b border-slate-700/50 pb-2 truncate">{GAME_MODES[modeId].name}</h4>
+                            {top.length === 0 ? (
+                                <p className="text-slate-500 text-center italic text-sm py-8 my-auto">Aún no hay partidas registradas</p>
+                            ) : (
+                                <div className="flex flex-col gap-2">
+                                    {top.map((p, i) => (
+                                        <div key={i} className={`flex justify-between items-center p-2 md:p-3 rounded-xl ${i===0 ? 'bg-yellow-900/40 border border-yellow-500/50' : i===1 ? 'bg-slate-800/60 border border-slate-400/30' : 'bg-orange-900/20 border border-orange-700/30'}`}>
+                                            <div className="flex items-center gap-2 md:gap-3 min-w-0">
+                                                <span className="text-xl md:text-2xl drop-shadow-md">{i===0 ? '🥇' : i===1 ? '🥈' : '🥉'}</span>
+                                                <span className="font-bold text-white uppercase truncate md:text-lg">{p.name}</span>
+                                            </div>
+                                            <div className="flex flex-col items-end shrink-0 pl-2">
+                                                <span className="font-black text-fuchsia-400 text-base md:text-xl drop-shadow-sm">{p.displayScore}</span>
+                                                <span className="text-[9px] md:text-xs text-slate-400 uppercase font-bold">{p.wins} {p.wins === 1 ? 'Victoria' : 'Victorias'}</span>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    );
+                };
+
+                return (
+                    <div className="flex-1 flex flex-col items-center p-4 relative z-10 w-full overflow-y-auto">
+                        <div className="z-10 w-full max-w-6xl bg-slate-900/90 backdrop-blur-xl p-4 md:p-8 rounded-3xl border border-yellow-500/30 shadow-[0_0_50px_rgba(234,179,8,0.2)] flex flex-col">
+                            <div className="flex flex-col md:flex-row justify-between items-center mb-6 shrink-0 border-b border-slate-700 pb-4 gap-4">
+                                <h2 className="text-3xl md:text-5xl font-black text-transparent bg-clip-text bg-gradient-to-r from-yellow-400 to-amber-600 drop-shadow-md flex items-center gap-3">
+                                    <IconTrophy size={40} className="text-yellow-400 shrink-0" /> RANKING GLOBAL
+                                </h2>
+                                <button onClick={() => updateGame({ appState: 'home' })} className="bg-slate-800 hover:bg-slate-700 text-white font-bold py-3 px-6 rounded-xl transition-colors border border-slate-600 flex items-center gap-2 w-full md:w-auto justify-center">
+                                    <IconUndo size={18} /> Volver al Menú
+                                </button>
+                            </div>
+
+                            <div className="flex-1">
+                                <h3 className="text-2xl md:text-3xl font-black text-white mb-4 mt-2 tracking-wide flex items-center gap-2"><span className="w-2 h-8 bg-cyan-500 rounded-full"></span> CRICKETS (Top MPR)</h3>
+                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-10">
+                                    {['cut_throat', 'normal_cricket', 'no_score_cricket'].map(m => renderModeCard(m, 'MPR'))}
+                                </div>
+
+                                <h3 className="text-2xl md:text-3xl font-black text-white mb-4 tracking-wide flex items-center gap-2"><span className="w-2 h-8 bg-fuchsia-500 rounded-full"></span> X01 CLÁSICOS (Top PPD)</h3>
+                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 gap-4 mb-4">
+                                    {['301', '501', '701', '901'].map(m => renderModeCard(m, 'PPD'))}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                );
+            };
 
             const renderConfig = () => (
                 <div className="flex-1 flex flex-col items-center justify-center p-4 relative min-h-0 z-10">
@@ -535,7 +771,8 @@
                             <div>
                                 <label className="block text-cyan-400 text-sm font-bold mb-1 uppercase flex items-center gap-2"><IconUsers size={16}/> Jugadores</label>
                                 <select value={numPlayers} onChange={(e) => updateGame({numPlayers: Number(e.target.value)})} className="w-full bg-slate-950/80 border-2 border-slate-700/50 text-white p-3 rounded-xl text-lg font-bold text-center cursor-pointer focus:border-cyan-500 focus:outline-none backdrop-blur-sm">
-                                    {[1, 2, 3, 4, 5, 6].map(n => <option key={n} value={n}>{n} {n === 1 ? 'Jugador' : 'Jugadores'}</option>)}
+                                    {/* AHORA HASTA 8 JUGADORES */}
+                                    {[1, 2, 3, 4, 5, 6, 7, 8].map(n => <option key={n} value={n}>{n} {n === 1 ? 'Jugador' : 'Jugadores'}</option>)}
                                 </select>
                             </div>
                             
@@ -555,7 +792,7 @@
                 
                 return (
                     <div className="flex-1 flex flex-col items-center justify-center p-4 relative min-h-0 z-10">
-                        <div className="z-10 w-full max-w-2xl bg-slate-900/80 backdrop-blur-xl p-6 rounded-3xl border border-fuchsia-500/30 shadow-[0_0_50px_rgba(236,72,153,0.2)] flex flex-col min-h-0">
+                        <div className="z-10 w-full max-w-4xl bg-slate-900/80 backdrop-blur-xl p-6 rounded-3xl border border-fuchsia-500/30 shadow-[0_0_50px_rgba(236,72,153,0.2)] flex flex-col min-h-0">
                             <h2 className="text-3xl font-black text-center mb-6 text-fuchsia-400 shrink-0 drop-shadow-md">NOMBRES</h2>
                             
                             <div className={`grid gap-3 w-full flex-1 min-h-0 ${getDynamicGridClass(numPlayers)} content-center`}>
@@ -656,6 +893,13 @@
                 const isCricket = ['cut_throat', 'normal_cricket', 'no_score_cricket'].includes(gameMode);
                 const isNoScore = gameMode === 'no_score_cricket';
                 
+                const getPreviewHandlers = (sector, multiplier) => ({
+                    onPointerDown: () => setPreviewText(getSectorText(sector, multiplier)),
+                    onPointerUp: () => setPreviewText(null),
+                    onPointerLeave: () => setPreviewText(null),
+                    onPointerCancel: () => setPreviewText(null),
+                });
+
                 let currentATCTarget = null;
                 if (gameMode === 'around_the_clock') {
                     currentATCTarget = currentPlayer.score;
@@ -673,10 +917,12 @@
                     return p.score; 
                 };
 
+                const pieceClasses = "cursor-pointer md:hover:brightness-[1.3] active:brightness-[1.8] active:scale-[1.02] transition-all duration-75";
+                const pieceStyle = { transformOrigin: `${cx}px ${cy}px` };
+
                 return (
                     <div className="flex-1 flex flex-col min-h-0 w-full relative z-10">
                         
-                        {/* Bloqueo visual si es un móvil y NO es su turno, o si está validando tirada */}
                         {joinedViaUrl && (
                             (localPlayerId !== null && localPlayerId !== currentPlayerIdx && activeTab === 'board' && (
                                 <div className="absolute inset-0 z-30 bg-slate-950/80 backdrop-blur-[4px] flex items-center justify-center mt-16 md:mt-24 rounded-3xl m-2 md:m-4">
@@ -698,7 +944,6 @@
                             ))
                         )}
 
-                        {/* OVERLAY DE CONFIRMACIÓN ANTI-TRAMPAS (Solo sale en la Tablet Host) */}
                         {pendingConfirmation && !joinedViaUrl && (
                             <div className="absolute inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
                                 <div className="bg-slate-900 border-2 border-cyan-500 p-6 md:p-8 rounded-3xl max-w-2xl w-full text-center shadow-[0_0_50px_rgba(6,182,212,0.5)] flex flex-col">
@@ -730,7 +975,6 @@
                             </div>
                         )}
 
-                        {/* OVERLAY SALIR */}
                         {showExitConfirm && (
                             <div className="absolute inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
                                 <div className="bg-slate-900 border border-slate-700 p-8 rounded-3xl max-sm w-full text-center shadow-2xl flex flex-col">
@@ -744,13 +988,19 @@
                             </div>
                         )}
 
-                        {/* OVERLAY VICTORIA */}
                         {winner && (
                             <div className="absolute inset-0 z-40 bg-black/90 backdrop-blur-xl flex flex-col items-center justify-center p-4">
                                 <IconTrophy size={100} className="text-yellow-400 drop-shadow-[0_0_40px_rgba(250,204,21,0.8)] mb-4 animate-bounce shrink-0" />
-                                <h1 className="text-5xl md:text-7xl lg:text-8xl font-black text-transparent bg-clip-text bg-gradient-to-r from-yellow-300 to-yellow-600 text-center mb-4 uppercase shrink-0">
+                                <h1 className="text-5xl md:text-7xl lg:text-8xl font-black text-transparent bg-clip-text bg-gradient-to-r from-yellow-300 to-yellow-600 text-center mb-2 uppercase shrink-0">
                                     ¡{winner.name} GANA!
                                 </h1>
+
+                                {isNewRecord && (
+                                    <div className="bg-gradient-to-r from-fuchsia-600 to-purple-600 text-white font-black px-6 py-2 rounded-full mb-4 animate-pulse shadow-[0_0_30px_rgba(236,72,153,0.8)] border-2 border-white text-xl md:text-3xl flex items-center gap-2 transform -rotate-2">
+                                        🔥 ¡NUEVO RÉCORD GLOBAL! ({recordStatsText}) 🔥
+                                    </div>
+                                )}
+
                                 {['cut_throat', 'normal_cricket', 'high_score'].includes(gameMode) && (
                                     <p className="text-4xl lg:text-5xl text-slate-200 mb-8 font-black border-2 border-yellow-500/50 p-6 rounded-2xl bg-yellow-900/30 backdrop-blur-md shrink-0">{winner.score} pts</p>
                                 )}
@@ -774,7 +1024,6 @@
                                 </div>
                             )}
 
-                            {/* BLOQUE DE RONDAS */}
                             <div className="flex flex-col items-center justify-center px-2 md:px-6 bg-slate-800/80 rounded-xl border border-slate-700/50 shrink-0 min-w-[50px] md:min-w-[100px]">
                                 <span className="text-slate-500 font-bold text-[8px] md:text-[10px] uppercase leading-none mb-0.5">Ronda</span>
                                 <span className="text-cyan-400 font-black text-sm md:text-2xl leading-none">{round}</span>
@@ -815,18 +1064,60 @@
                                                 if (isCricket) isValidTarget = CRICKET_NUMBERS.includes(sector);
                                                 if (gameMode === 'around_the_clock') isValidTarget = sector === currentATCTarget;
 
+                                                const pathOuterSingle = describeArc(cx, cy, rTreble, rOuterSingle, startAngle, endAngle);
+                                                const pathInnerSingle = describeArc(cx, cy, rOuterBull, rInnerSingle, startAngle, endAngle);
+                                                const pathDouble = describeArc(cx, cy, rOuterSingle, rDouble, startAngle, endAngle);
+                                                const pathTreble = describeArc(cx, cy, rInnerSingle, rTreble, startAngle, endAngle);
+
+                                                const onClickPiece = (multiplier, type, d) => {
+                                                    if (handleHit(sector, multiplier)) {
+                                                        triggerFeedback({ type, d });
+                                                    }
+                                                };
+
                                                 return (
                                                     <g key={`sector-${sector}`}>
-                                                        <path d={describeArc(cx, cy, rTreble, rOuterSingle, startAngle, endAngle)} fill={single} stroke="#1e293b" strokeWidth="0.5" onClick={() => handleHit(sector, 1)} />
-                                                        <path d={describeArc(cx, cy, rOuterBull, rInnerSingle, startAngle, endAngle)} fill={single} stroke="#1e293b" strokeWidth="0.5" onClick={() => handleHit(sector, 1)} />
-                                                        <path d={describeArc(cx, cy, rOuterSingle, rDouble, startAngle, endAngle)} fill={ring} stroke="#0f172a" strokeWidth="1" onClick={() => handleHit(sector, 2)} />
-                                                        <path d={describeArc(cx, cy, rInnerSingle, rTreble, startAngle, endAngle)} fill={ring} stroke="#0f172a" strokeWidth="1" onClick={() => handleHit(sector, 3)} />
+                                                        <path d={pathOuterSingle} fill={single} stroke="#1e293b" strokeWidth="0.5" className={pieceClasses} style={pieceStyle} {...getPreviewHandlers(sector, 1)} onClick={() => onClickPiece(1, 'path', pathOuterSingle)} />
+                                                        <path d={pathInnerSingle} fill={single} stroke="#1e293b" strokeWidth="0.5" className={pieceClasses} style={pieceStyle} {...getPreviewHandlers(sector, 1)} onClick={() => onClickPiece(1, 'path', pathInnerSingle)} />
+                                                        <path d={pathDouble} fill={ring} stroke="#0f172a" strokeWidth="1" className={pieceClasses} style={pieceStyle} {...getPreviewHandlers(sector, 2)} onClick={() => onClickPiece(2, 'path', pathDouble)} />
+                                                        <path d={pathTreble} fill={ring} stroke="#0f172a" strokeWidth="1" className={pieceClasses} style={pieceStyle} {...getPreviewHandlers(sector, 3)} onClick={() => onClickPiece(3, 'path', pathTreble)} />
                                                         <text x={textPos.x} y={textPos.y} fontSize="16" fill={isValidTarget ? (gameMode === 'around_the_clock' ? '#f472b6' : colors.text) : '#334155'} textAnchor="middle" dominantBaseline="middle" fontWeight={isValidTarget ? "900" : "500"} className={isValidTarget && gameMode === 'around_the_clock' ? 'animate-pulse' : ''}>{sector}</text>
                                                     </g>
                                                 );
                                             })}
-                                            <circle cx={cx} cy={cy} r={rOuterBull} fill={colors.double2} stroke="#0f172a" strokeWidth="1" onClick={() => handleHit(25, 1)} />
-                                            <circle cx={cx} cy={cy} r={rInnerBull} fill={colors.double1} stroke="#0f172a" strokeWidth="1" onClick={() => handleHit(25, 2)} />
+
+                                            {(() => {
+                                                const onClickBull = (multiplier, rTarget) => {
+                                                    if (handleHit(25, multiplier)) {
+                                                        triggerFeedback({ type: 'circle', cx, cy, r: rTarget });
+                                                    }
+                                                };
+                                                return (
+                                                    <>
+                                                        <circle cx={cx} cy={cy} r={rOuterBull} fill={colors.double2} stroke="#0f172a" strokeWidth="1" className={pieceClasses} style={pieceStyle} {...getPreviewHandlers(25, 1)} onClick={() => onClickBull(1, rOuterBull)} />
+                                                        <circle cx={cx} cy={cy} r={rInnerBull} fill={colors.double1} stroke="#0f172a" strokeWidth="1" className={pieceClasses} style={pieceStyle} {...getPreviewHandlers(25, 2)} onClick={() => onClickBull(2, rInnerBull)} />
+                                                    </>
+                                                );
+                                            })()}
+
+                                            {previewText && (
+                                                <g className="pointer-events-none transition-opacity duration-75">
+                                                    <circle cx={cx} cy={cy} r={48} fill="#0f172a" opacity="0.95" stroke="#f472b6" strokeWidth="3" filter="drop-shadow(0px 0px 10px #f472b6)" />
+                                                    <text x={cx} y={cy - 12} fontSize="12" fill="#cbd5e1" textAnchor="middle" dominantBaseline="middle" fontWeight="bold" className="uppercase tracking-widest">Pulsando</text>
+                                                    <text x={cx} y={cy + 8} fontSize="16" fill="#ffffff" textAnchor="middle" dominantBaseline="middle" fontWeight="black" className="uppercase">{previewText}</text>
+                                                </g>
+                                            )}
+
+                                            {hitFeedback && (
+                                                <g style={{ transformOrigin: `${cx}px ${cy}px`, transform: 'scale(1.06)' }} className="pointer-events-none transition-transform duration-75">
+                                                    {hitFeedback.type === 'path' && (
+                                                        <path d={hitFeedback.d} fill="#a5f3fc" opacity="0.9" stroke="#06b6d4" strokeWidth="2" filter="drop-shadow(0px 0px 8px #06b6d4)" />
+                                                    )}
+                                                    {hitFeedback.type === 'circle' && (
+                                                        <circle cx={hitFeedback.cx} cy={hitFeedback.cy} r={hitFeedback.r} fill="#a5f3fc" opacity="0.9" stroke="#06b6d4" strokeWidth="2" filter="drop-shadow(0px 0px 8px #06b6d4)" />
+                                                    )}
+                                                </g>
+                                            )}
                                         </svg>
                                     </div>
 
@@ -884,7 +1175,7 @@
                                                         <thead>
                                                             <tr className="h-[12%]">
                                                                 <th className="border-b border-slate-700/50 text-slate-400 w-8 md:w-12 text-[9px] md:text-[10px] uppercase">Nº</th>
-                                                                {players.map((p, i) => <th key={p.id} className={`border-b border-slate-700/50 truncate text-[10px] md:text-xs font-black ${i === currentPlayerIdx ? 'text-cyan-400 bg-cyan-900/30' : 'text-slate-200'}`}>{p.name.substring(0,4)}</th>)}
+                                                                {players.map((p, i) => <th key={p.id} className={`border-b border-slate-700/50 truncate text-xs md:text-sm font-black ${i === currentPlayerIdx ? 'text-cyan-400 bg-cyan-900/30' : 'text-slate-200'}`}>{p.name.substring(0,4)}</th>)}
                                                             </tr>
                                                         </thead>
                                                         <tbody className="h-[88%]">
@@ -906,7 +1197,7 @@
                                                     <div className={`grid gap-1.5 w-full h-full ${getDynamicGridClass(players.length)} p-1`}>
                                                         {players.map((p, i) => (
                                                             <div key={p.id} className={`bg-slate-950/60 rounded-lg p-1 border flex flex-col items-center justify-center min-h-0 ${i === currentPlayerIdx ? 'border-cyan-500/80 bg-cyan-900/30' : 'border-slate-700/50'}`}>
-                                                                <span className={`text-[9px] md:text-[10px] font-bold uppercase tracking-widest truncate w-full text-center shrink-0 drop-shadow-sm ${i === currentPlayerIdx ? 'text-cyan-400' : 'text-slate-400'}`}>{p.name}</span>
+                                                                <span className={`text-[10px] md:text-sm font-bold uppercase tracking-widest truncate w-full text-center shrink-0 drop-shadow-sm ${i === currentPlayerIdx ? 'text-cyan-400' : 'text-slate-400'}`}>{p.name}</span>
                                                                 {gameMode === 'around_the_clock' && i === currentPlayerIdx ? (
                                                                     <span className="text-[8px] text-fuchsia-400 uppercase tracking-widest mb-[-4px]">Objetivo</span>
                                                                 ) : null}
@@ -935,7 +1226,7 @@
                                             <div className={`grid gap-3 md:gap-4 w-full h-full ${getDynamicGridClass(players.length)}`}>
                                                 {players.map((p, i) => (
                                                     <div key={p.id} className={`bg-slate-950/60 backdrop-blur-sm rounded-2xl border-4 flex flex-col items-center justify-center min-h-0 p-2 md:p-4 ${i === currentPlayerIdx ? 'border-cyan-500/80 shadow-[0_0_30px_rgba(6,182,212,0.3)] bg-cyan-900/20' : 'border-slate-700/50'}`}>
-                                                        <span className={`text-sm md:text-xl font-bold uppercase tracking-widest mb-1 md:mb-2 shrink-0 drop-shadow-md ${i === currentPlayerIdx ? 'text-cyan-400' : 'text-slate-400'}`}>
+                                                        <span className={`text-lg md:text-2xl font-bold uppercase tracking-widest mb-1 md:mb-2 shrink-0 drop-shadow-md ${i === currentPlayerIdx ? 'text-cyan-400' : 'text-slate-400'}`}>
                                                             {p.name} {i === currentPlayerIdx && '(Tirando)'}
                                                         </span>
                                                         {gameMode === 'around_the_clock' && (
@@ -952,14 +1243,14 @@
                                                 <thead>
                                                     <tr className="h-[12%]">
                                                         <th className="border-b-4 border-r-2 border-slate-700/80 text-slate-400 w-16 md:w-24 text-sm md:text-lg bg-slate-950/80 backdrop-blur-sm">Num</th>
-                                                        {players.map((p, i) => <th key={p.id} className={`border-b-4 border-r-2 border-slate-700/80 ${i === currentPlayerIdx ? 'text-cyan-400 bg-cyan-900/40' : 'text-slate-200 bg-slate-950/80'} font-black text-sm md:text-2xl truncate backdrop-blur-sm drop-shadow-md`}>{p.name.substring(0,8)}</th>)}
+                                                        {players.map((p, i) => <th key={p.id} className={`border-b-4 border-r-2 border-slate-700/80 ${i === currentPlayerIdx ? 'text-cyan-400 bg-cyan-900/40' : 'text-slate-200 bg-slate-950/80'} font-black text-xs sm:text-sm md:text-xl lg:text-2xl truncate backdrop-blur-sm drop-shadow-md px-1`}>{p.name.substring(0,8)}</th>)}
                                                     </tr>
                                                 </thead>
                                                 <tbody className="h-[88%]">
                                                     {!isNoScore && (
                                                         <tr className="bg-slate-950/60 border-b-4 border-cyan-800/60 h-[11%]">
                                                             <td className="border-r-2 border-slate-700/80 font-black text-xs md:text-sm text-fuchsia-400 uppercase tracking-widest drop-shadow-md">PUNTOS</td>
-                                                            {players.map((p, i) => <td key={`score-${p.id}`} className={`border-r-2 border-slate-700/80 font-black text-xl md:text-4xl text-white drop-shadow-lg ${i === currentPlayerIdx ? 'bg-cyan-900/30' : ''}`}>{p.score}</td>)}
+                                                            {players.map((p, i) => <td key={`score-${p.id}`} className={`border-r-2 border-slate-700/80 font-black text-lg md:text-4xl text-white drop-shadow-lg ${i === currentPlayerIdx ? 'bg-cyan-900/30' : ''}`}>{p.score}</td>)}
                                                         </tr>
                                                     )}
                                                     {CRICKET_NUMBERS.map(num => (
@@ -1005,11 +1296,12 @@
                             {appState === 'setup_names' && renderNames()}
                             {appState === 'setup_qr' && renderSetupQR()}
                             {appState === 'playing' && renderGame()}
+                            {appState === 'ranking' && renderRanking()}
                         </>
                     )}
                     
                     <div className="absolute bottom-1 md:bottom-2 right-2 md:right-4 text-cyan-300/60 font-mono text-[10px] md:text-xs font-bold tracking-widest z-50 pointer-events-none drop-shadow-md">
-                        AVS 3.3
+                        AVS 4.2
                     </div>
                 </div>
             );

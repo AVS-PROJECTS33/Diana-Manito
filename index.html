@@ -107,7 +107,7 @@
         };
 
         const getSectorText = (sector, multiplier) => {
-            if (sector === 0) return 'Fallo';
+            if (sector === 0) return 'Fallo (Fuera)';
             if (sector === 25) return multiplier === 1 ? 'Outer Bull' : 'Centro (Bull)';
             if (multiplier === 2) return `Doble ${sector}`;
             if (multiplier === 3) return `Triple ${sector}`;
@@ -238,7 +238,7 @@
                 return () => unsub();
             }, [isOnline, roomId, firebaseDb, user]);
 
-            // --- CARGAR RANKINGS (Fondo siempre para comprobar records en directo) ---
+            // --- CARGAR RANKINGS ---
             useEffect(() => {
                 if (!firebaseDb) return;
                 const canvasAppId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
@@ -255,7 +255,7 @@
                 return () => unsub();
             }, [firebaseDb]);
 
-            // --- GUARDAR ESTADÍSTICAS GLOBALES DE PARTIDA ÚNICA (Récord Personal y Global) ---
+            // --- GUARDAR ESTADÍSTICAS GLOBALES ---
             const saveStatsToFirebase = async (gamePlayers, mode, winPlayer) => {
                 if (!firebaseDb || mode === 'perdiz') return; // Excluido del ranking
                 const canvasAppId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
@@ -264,7 +264,6 @@
                 for (const p of gamePlayers) {
                     if (!p.matchStats || p.matchStats.darts === 0) continue; 
 
-                    // Calculamos la media (PPD/MPR) lograda SOLO en esta partida
                     let matchScore = 0;
                     if (isCricketMode) {
                         matchScore = (p.matchStats.marks / p.matchStats.darts) * 3;
@@ -283,7 +282,6 @@
                         
                         if (!data.stats[mode]) data.stats[mode] = { bestScore: 0, wins: 0, games: 0 };
                         
-                        // Capa de compatibilidad para datos antiguos que usaban acumulación
                         if (data.stats[mode].bestScore === undefined) {
                             if (data.stats[mode].darts > 0) {
                                 data.stats[mode].bestScore = isCricketMode 
@@ -294,7 +292,6 @@
                             }
                         }
 
-                        // Si la media de esta partida es superior a su récord histórico guardado, se actualiza
                         if (matchScore > data.stats[mode].bestScore) {
                             data.stats[mode].bestScore = matchScore;
                         }
@@ -322,7 +319,6 @@
                 });
             };
 
-            // Grid Dinámico hasta 8 jugadores
             const getDynamicGridClass = (totalItems) => {
                 if (totalItems === 1) return 'grid-cols-1 grid-rows-1';
                 if (totalItems === 2) return 'grid-cols-2 grid-rows-1';
@@ -339,6 +335,24 @@
             };
 
             const { appState, gameMode, numPlayers, players, activeTab, currentPlayerIdx, currentTurnThrows, lastHit, winner, round, isBust, pendingConfirmation, isNewRecord, recordStatsText } = gameState;
+
+            // Función anti-trampa para comprobar si el jugador acaba de conseguir el objetivo exacto en este mismo turno
+            const checkTentativeWin = (throws = currentTurnThrows) => {
+                if (!players[currentPlayerIdx]) return false;
+                const currentPoints = throws.reduce((sum, t) => sum + t.points, 0);
+                if (['301', '501', '701', '901'].includes(gameMode)) {
+                    return players[currentPlayerIdx].previousRoundScore - currentPoints === 0;
+                }
+                if (gameMode === 'perdiz') {
+                    return players[currentPlayerIdx].previousRoundScore + currentPoints === 696;
+                }
+                if (gameMode === 'around_the_clock') {
+                    let target = players[currentPlayerIdx].score;
+                    throws.forEach(t => { if (t.sector === target) target++; });
+                    return target > 20;
+                }
+                return false;
+            };
 
             const handleCreateRoom = () => {
                 const id = Math.random().toString(36).substring(2, 6).toUpperCase();
@@ -390,12 +404,12 @@
                 return localPlayerId === currentPlayerIdx; 
             };
 
-            // Función auxiliar para mostrar el Toast del objetivo tocado
+            // Función auxiliar para mostrar el Toast visual en el tablero
             const showToast = (text, multiplier) => {
-                let colorClass = 'text-cyan-400 border-cyan-500/50 shadow-[0_0_15px_rgba(6,182,212,0.4)]'; // Single
-                if (multiplier === 2) colorClass = 'text-fuchsia-400 border-fuchsia-500/50 shadow-[0_0_15px_rgba(236,72,153,0.4)]'; // Doble o Bull Inner
-                if (multiplier === 3) colorClass = 'text-yellow-400 border-yellow-500/50 shadow-[0_0_15px_rgba(234,179,8,0.4)]'; // Triple
-                if (text === 'Fallo') colorClass = 'text-red-400 border-red-500/50 shadow-[0_0_15px_rgba(239,68,68,0.4)]';
+                let colorClass = 'text-cyan-400 border-cyan-500/50 shadow-[0_0_15px_rgba(6,182,212,0.4)]'; 
+                if (multiplier === 2) colorClass = 'text-fuchsia-400 border-fuchsia-500/50 shadow-[0_0_15px_rgba(236,72,153,0.4)]'; 
+                if (multiplier === 3) colorClass = 'text-yellow-400 border-yellow-500/50 shadow-[0_0_15px_rgba(234,179,8,0.4)]'; 
+                if (text === 'Fallo (Fuera)') colorClass = 'text-red-400 border-red-500/50 shadow-[0_0_15px_rgba(239,68,68,0.4)]';
 
                 setShowTargetToast({ text, colorClass, id: Date.now() });
 
@@ -405,12 +419,12 @@
                 
                 toastTimeoutRef.current = setTimeout(() => {
                     setShowTargetToast(null);
-                }, 1500); // Se oculta después de 1.5 segundos
+                }, 1800);
             };
 
             const handleHit = (sector, multiplier) => {
                 if (!isActionAllowed()) return false;
-                if (currentTurnThrows.length >= 3 || winner || isBust || pendingConfirmation) return false;
+                if (currentTurnThrows.length >= 3 || winner || isBust || pendingConfirmation || checkTentativeWin()) return false;
                 
                 const isCricket = ['cut_throat', 'normal_cricket', 'no_score_cricket'].includes(gameMode);
                 if (isCricket && !CRICKET_NUMBERS.includes(sector)) {
@@ -423,7 +437,6 @@
 
                 let text = getSectorText(sector, multiplier);
                 
-                // Mostramos el Toast visual en la diana
                 showToast(text, multiplier);
                 
                 let stolen = false;
@@ -438,45 +451,27 @@
                 const newThrows = [...currentTurnThrows, throwData];
                 
                 let newIsBust = isBust;
-                let newWinner = winner;
-                let newPlayers = [...players];
 
+                // Calculamos solo el Bust a mitad de turno. La victoria se consolida en endTurn.
                 if (['301', '501', '701', '901'].includes(gameMode)) {
                     const currentPointsScored = newThrows.reduce((sum, t) => sum + t.points, 0);
-                    const remaining = newPlayers[currentPlayerIdx].previousRoundScore - currentPointsScored;
+                    const remaining = players[currentPlayerIdx].previousRoundScore - currentPointsScored;
 
                     if (remaining < 0 || remaining === 1) { 
                         newIsBust = true;
-                    } else if (remaining === 0) {
-                        newPlayers[currentPlayerIdx].score = 0;
-                        newWinner = newPlayers[currentPlayerIdx];
-                    }
-                } else if (gameMode === 'around_the_clock') {
-                    let currentTarget = newPlayers[currentPlayerIdx].score;
-                    newThrows.forEach(t => {
-                        if (t.sector === currentTarget) currentTarget++;
-                    });
-                    if (currentTarget > 20) {
-                        newPlayers[currentPlayerIdx].score = currentTarget;
-                        newWinner = newPlayers[currentPlayerIdx];
                     }
                 } else if (gameMode === 'perdiz') {
                     const currentPointsScored = newThrows.reduce((sum, t) => sum + t.points, 0);
-                    const total = newPlayers[currentPlayerIdx].previousRoundScore + currentPointsScored;
+                    const total = players[currentPlayerIdx].previousRoundScore + currentPointsScored;
                     if (total > 696) {
                         newIsBust = true;
-                    } else if (total === 696) {
-                        newPlayers[currentPlayerIdx].score = 696;
-                        newWinner = newPlayers[currentPlayerIdx];
                     }
                 }
 
                 updateGame({
                     currentTurnThrows: newThrows,
                     lastHit: throwData,
-                    isBust: newIsBust,
-                    winner: newWinner,
-                    players: newPlayers
+                    isBust: newIsBust
                 });
 
                 return true; 
@@ -484,7 +479,7 @@
 
             const handleMiss = () => {
                 if (!isActionAllowed()) return false;
-                if (currentTurnThrows.length >= 3 || winner || isBust || pendingConfirmation) return false;
+                if (currentTurnThrows.length >= 3 || winner || isBust || pendingConfirmation || checkTentativeWin()) return false;
                 const throwData = { sector: 0, multiplier: 0, points: 0, text: `Fallo (Fuera)` };
                 
                 showToast(throwData.text, 0);
@@ -506,13 +501,13 @@
                         lastHit: newThrows.length > 0 ? newThrows[newThrows.length - 1] : null,
                         isBust: false
                     });
-                    setShowTargetToast(null); // Ocultar toast si deshacemos
+                    setShowTargetToast(null);
                 }
             };
 
             const requestTurnConfirmation = () => {
                 if (!isActionAllowed()) return;
-                if (currentTurnThrows.length < 3 && !isBust) return;
+                if (currentTurnThrows.length < 3 && !isBust && !checkTentativeWin()) return;
 
                 if (isOnline && joinedViaUrl) {
                     updateGame({ pendingConfirmation: true });
@@ -543,7 +538,7 @@
             };
 
             const endTurn = () => {
-                if (currentTurnThrows.length < 3 && !isBust) return;
+                if (currentTurnThrows.length < 3 && !isBust && !checkTentativeWin()) return;
 
                 let updatedPlayers = players.map(p => ({ ...p, marks: { ...p.marks }, matchStats: { ...p.matchStats } }));
                 let currentP = updatedPlayers[currentPlayerIdx];
@@ -635,6 +630,7 @@
                     });
                 }
 
+                // Determinamos el ganador aquí, DESPUÉS de confirmar la tirada.
                 let possibleWinner = null;
                 if (['cut_throat', 'normal_cricket', 'no_score_cricket'].includes(gameMode)) {
                     possibleWinner = checkWinnerCricket(updatedPlayers, gameMode);
@@ -642,6 +638,12 @@
                     if (currentPlayerIdx === players.length - 1 && round === 7) {
                         possibleWinner = [...updatedPlayers].sort((a, b) => b.score - a.score)[0];
                     }
+                } else if (['301', '501', '701', '901'].includes(gameMode)) {
+                    if (currentP.score === 0) possibleWinner = currentP;
+                } else if (gameMode === 'perdiz') {
+                    if (currentP.score === 696) possibleWinner = currentP;
+                } else if (gameMode === 'around_the_clock') {
+                    if (currentP.score > 20) possibleWinner = currentP;
                 }
 
                 let nextTurnInRound = (gameState.turnInRound || 0);
@@ -666,11 +668,10 @@
                 let newIsRecord = isNewRecord;
                 let newRecordText = recordStatsText;
 
-                // Solo la tablet Host guarda datos en Firebase al ganar alguien
+                // Guarda datos globales si la tablet anfitriona procesa el fin de juego
                 if (possibleWinner && !joinedViaUrl) {
                     const isX01 = ['301', '501', '701', '901'].includes(gameMode);
                     
-                    // Comprobar si hay nuevo récord histórico global
                     if (isCricketMode || isX01) {
                         let matchScore = 0;
                         const pStats = possibleWinner.matchStats;
@@ -718,7 +719,7 @@
                     activeTab: 'board'
                 });
 
-                setShowTargetToast(null); // Ocultar toast al cambiar de turno
+                setShowTargetToast(null);
             };
 
             const resetGame = () => {
@@ -939,7 +940,6 @@
                 </div>
             );
 
-            // FUNCIÓN AÑADIDA PARA EVITAR EL ERROR (REFERENCE ERROR)
             const renderMobileWaiting = () => (
                 <div className="flex-1 flex flex-col items-center justify-center p-6 relative z-10 text-center">
                     <IconTarget size={80} className="text-cyan-400 mb-6 animate-pulse drop-shadow-[0_0_15px_rgba(6,182,212,0.8)]" />
@@ -993,7 +993,6 @@
                 
                 let colors = { dark: '#0f172a', light: '#334155', double1: '#ec4899', double2: '#06b6d4', text: '#f8fafc', bullOuter: '#06b6d4', bullInner: '#ec4899' };
                 if (gameMode === 'perdiz') {
-                    // PALETA EXCLUSIVA PERDIZ
                     colors = { dark: '#171717', light: '#16a34a', double1: '#dc2626', double2: '#eab308', text: '#ffffff', bullOuter: '#eab308', bullInner: '#dc2626' };
                 }
                 const getColors = (index) => ({ single: index % 2 === 0 ? colors.dark : colors.light, ring: index % 2 === 0 ? colors.double1 : colors.double2 });
@@ -1009,9 +1008,10 @@
                 };
 
                 const currentPlayer = players[currentPlayerIdx];
-                const isTurnComplete = currentTurnThrows.length === 3 || isBust;
                 const isCricket = ['cut_throat', 'normal_cricket', 'no_score_cricket'].includes(gameMode);
                 const isNoScore = gameMode === 'no_score_cricket';
+                
+                const isTurnComplete = currentTurnThrows.length === 3 || isBust || checkTentativeWin();
                 
                 const getPreviewHandlers = (sector, multiplier) => ({
                     onPointerDown: () => setPreviewText(getSectorText(sector, multiplier)),
@@ -1046,6 +1046,31 @@
 
                 const pieceClasses = "cursor-pointer md:hover:brightness-[1.3] active:brightness-[1.8] active:scale-[1.02] transition-all duration-75";
                 const pieceStyle = { transformOrigin: `${cx}px ${cy}px` };
+
+                // LÓGICA DE ESTADÍSTICAS PARA PANTALLA DE VICTORIA
+                let winnerStatsDisplay = null;
+                if (winner && winner.matchStats && winner.matchStats.darts > 0) {
+                    const isCricketMode = ['cut_throat', 'normal_cricket', 'no_score_cricket'].includes(gameMode);
+                    const isX01 = ['301', '501', '701', '901'].includes(gameMode);
+                    
+                    if (isCricketMode) {
+                        const mpr = ((winner.matchStats.marks / winner.matchStats.darts) * 3).toFixed(2);
+                        winnerStatsDisplay = (
+                            <div className="bg-fuchsia-900/40 border-2 border-fuchsia-500/50 p-6 rounded-3xl backdrop-blur-md mb-8 shadow-[0_0_30px_rgba(236,72,153,0.3)]">
+                                <p className="text-slate-300 text-sm uppercase tracking-widest font-bold mb-1">Media de la partida</p>
+                                <p className="text-5xl lg:text-6xl text-fuchsia-400 font-black">{mpr} <span className="text-2xl text-fuchsia-300">MPR</span></p>
+                            </div>
+                        );
+                    } else if (isX01 || gameMode === 'high_score') {
+                        const ppd = (winner.matchStats.points / winner.matchStats.darts).toFixed(2);
+                        winnerStatsDisplay = (
+                            <div className="bg-cyan-900/40 border-2 border-cyan-500/50 p-6 rounded-3xl backdrop-blur-md mb-8 shadow-[0_0_30px_rgba(6,182,212,0.3)]">
+                                <p className="text-slate-300 text-sm uppercase tracking-widest font-bold mb-1">Media de la partida</p>
+                                <p className="text-5xl lg:text-6xl text-cyan-400 font-black">{ppd} <span className="text-2xl text-cyan-300">PPD</span></p>
+                            </div>
+                        );
+                    }
+                }
 
                 return (
                     <div className="flex-1 flex flex-col min-h-0 w-full relative z-10">
@@ -1116,23 +1141,25 @@
                         )}
 
                         {winner && (
-                            <div className="absolute inset-0 z-40 bg-black/90 backdrop-blur-xl flex flex-col items-center justify-center p-4">
+                            <div className="absolute inset-0 z-40 bg-black/90 backdrop-blur-xl flex flex-col items-center justify-center p-4 text-center">
                                 <IconTrophy size={100} className="text-yellow-400 drop-shadow-[0_0_40px_rgba(250,204,21,0.8)] mb-4 animate-bounce shrink-0" />
-                                <h1 className="text-5xl md:text-7xl lg:text-8xl font-black text-transparent bg-clip-text bg-gradient-to-r from-yellow-300 to-yellow-600 text-center mb-2 uppercase shrink-0">
+                                <h1 className="text-5xl md:text-7xl lg:text-8xl font-black text-transparent bg-clip-text bg-gradient-to-r from-yellow-300 to-yellow-600 mb-4 uppercase shrink-0">
                                     ¡{winner.name} GANA!
                                 </h1>
 
                                 {isNewRecord && (
-                                    <div className="bg-gradient-to-r from-fuchsia-600 to-purple-600 text-white font-black px-6 py-2 rounded-full mb-4 animate-pulse shadow-[0_0_30px_rgba(236,72,153,0.8)] border-2 border-white text-xl md:text-3xl flex items-center gap-2 transform -rotate-2">
+                                    <div className="bg-gradient-to-r from-fuchsia-600 to-purple-600 text-white font-black px-6 py-2 rounded-full mb-6 animate-pulse shadow-[0_0_30px_rgba(236,72,153,0.8)] border-2 border-white text-xl md:text-3xl flex items-center gap-2 transform -rotate-2">
                                         🔥 ¡NUEVO RÉCORD GLOBAL! ({recordStatsText}) 🔥
                                     </div>
                                 )}
 
+                                {winnerStatsDisplay}
+
                                 {['cut_throat', 'normal_cricket', 'high_score'].includes(gameMode) && (
-                                    <p className="text-4xl lg:text-5xl text-slate-200 mb-8 font-black border-2 border-yellow-500/50 p-6 rounded-2xl bg-yellow-900/30 backdrop-blur-md shrink-0">{winner.score} pts</p>
+                                    <p className="text-2xl lg:text-3xl text-slate-300 mb-8 font-bold border border-yellow-500/30 px-6 py-3 rounded-full bg-yellow-900/20 backdrop-blur-md shrink-0">Puntuación Final: <span className="text-yellow-400 font-black">{winner.score} pts</span></p>
                                 )}
                                 {gameMode === 'perdiz' && (
-                                    <p className="text-4xl lg:text-5xl text-slate-200 mb-8 font-black border-2 border-amber-500/50 p-6 rounded-2xl bg-amber-900/30 backdrop-blur-md shrink-0">696 pts EXACTOS</p>
+                                    <p className="text-2xl lg:text-3xl text-slate-300 mb-8 font-bold border border-amber-500/30 px-6 py-3 rounded-full bg-amber-900/20 backdrop-blur-md shrink-0">Puntuación Final: <span className="text-amber-400 font-black">696 pts EXACTOS</span></p>
                                 )}
                                 {gameMode === 'around_the_clock' && (
                                     <p className="text-2xl text-slate-300 mb-8 font-bold uppercase tracking-widest bg-yellow-900/30 p-4 rounded-2xl border border-yellow-500/30">¡Ha completado el reloj!</p>
@@ -1162,9 +1189,13 @@
                             <button onClick={() => updateGame({ activeTab: 'board' })} className={`flex-1 h-full rounded-xl font-black flex justify-center items-center gap-2 transition-all ${activeTab === 'board' ? 'bg-cyan-500 text-slate-950 shadow-[0_0_15px_rgba(6,182,212,0.5)] scale-[1.02]' : 'bg-slate-800/60 text-slate-300 hover:bg-slate-700/80'}`}>
                                 <IconTarget size={20} /> <span className="text-[10px] md:text-base">MARCAR TIRADA</span>
                             </button>
-                            <button onClick={() => updateGame({ activeTab: 'scores' })} className={`flex-1 h-full rounded-xl font-black flex justify-center items-center gap-2 transition-all ${activeTab === 'scores' ? 'bg-fuchsia-500 text-white shadow-[0_0_15px_rgba(236,72,153,0.5)] scale-[1.02]' : 'bg-slate-800/60 text-slate-300 hover:bg-slate-700/80'}`}>
-                                <IconList size={20} /> <span className="text-[10px] md:text-base">PUNTUACIONES</span>
-                            </button>
+                            
+                            {!joinedViaUrl && (
+                                <button onClick={() => updateGame({ activeTab: 'scores' })} className={`flex-1 h-full rounded-xl font-black flex justify-center items-center gap-2 transition-all ${activeTab === 'scores' ? 'bg-fuchsia-500 text-white shadow-[0_0_15px_rgba(236,72,153,0.5)] scale-[1.02]' : 'bg-slate-800/60 text-slate-300 hover:bg-slate-700/80'}`}>
+                                    <IconList size={20} /> <span className="text-[10px] md:text-base">PUNTUACIONES</span>
+                                </button>
+                            )}
+
                             {!joinedViaUrl ? (
                                 <button onClick={() => setShowExitConfirm(true)} className="w-12 md:w-20 h-full rounded-xl font-black bg-red-900/40 text-red-400 hover:bg-red-600 hover:text-white border border-red-900/50 transition-colors flex items-center justify-center backdrop-blur-sm">
                                     <IconPower size={20} />
@@ -1186,14 +1217,17 @@
                                         
                                         {/* TOAST INDICADOR DE IMPACTO EN LA ESQUINA SUPERIOR DERECHA DE LA DIANA */}
                                         {showTargetToast && (
-                                            <div key={showTargetToast.id} className={`absolute top-4 right-4 z-20 bg-slate-950/90 border-2 ${showTargetToast.colorClass} rounded-2xl px-6 py-4 flex flex-col items-center justify-center animate-toast backdrop-blur-sm`}>
+                                            <div key={showTargetToast.id} className={`absolute top-4 right-4 z-20 bg-slate-950/90 border-2 ${showTargetToast.colorClass} rounded-2xl px-6 py-4 flex flex-col items-center justify-center animate-toast backdrop-blur-sm pointer-events-none`}>
                                                 <span className="text-[10px] md:text-xs text-slate-300 font-bold uppercase tracking-widest mb-1">Has marcado</span>
                                                 <span className="text-2xl md:text-4xl font-black leading-none">{showTargetToast.text}</span>
                                             </div>
                                         )}
 
                                         <svg viewBox="0 0 340 340" className="w-full h-full object-contain drop-shadow-[0_0_30px_rgba(0,0,0,0.8)] z-10" style={{ touchAction: 'none' }}>
-                                            <circle cx={cx} cy={cy} r={maxR + 25} fill="#020617" />
+                                            {/* Fondo para capturar el fallo tocando fuera de los números */}
+                                            <rect x="0" y="0" width="340" height="340" fill="transparent" className="cursor-pointer" onClick={handleMiss} />
+                                            <circle cx={cx} cy={cy} r={maxR + 25} fill="#020617" className="cursor-pointer" onClick={handleMiss} />
+                                            
                                             {SECTORS.map((sector, i) => {
                                                 const startAngle = i * 18 - 9, endAngle = i * 18 + 9, textAngle = i * 18;
                                                 const textPos = polarToCartesian(cx, cy, maxR + 15, textAngle);
@@ -1216,7 +1250,8 @@
                                                 const pathDouble = describeArc(cx, cy, rOuterSingle, rDouble, startAngle, endAngle);
                                                 const pathTreble = describeArc(cx, cy, rInnerSingle, rTreble, startAngle, endAngle);
 
-                                                const onClickPiece = (multiplier, type, d) => {
+                                                const onClickPiece = (multiplier, type, d, e) => {
+                                                    e.stopPropagation(); // Evita que se dispare el handleMiss del fondo
                                                     if (handleHit(sector, multiplier)) {
                                                         triggerFeedback({ type, d });
                                                     }
@@ -1224,11 +1259,11 @@
 
                                                 return (
                                                     <g key={`sector-${sector}`}>
-                                                        <path d={pathOuterSingle} fill={isStealableOuterSingle ? '#f59e0b' : single} stroke="#1e293b" strokeWidth="0.5" className={`${pieceClasses} ${isStealableOuterSingle ? 'animate-pulse' : ''}`} style={pieceStyle} {...getPreviewHandlers(sector, 1)} onClick={() => onClickPiece(1, 'path', pathOuterSingle)} />
-                                                        <path d={pathInnerSingle} fill={isStealableInnerSingle ? '#f59e0b' : single} stroke="#1e293b" strokeWidth="0.5" className={`${pieceClasses} ${isStealableInnerSingle ? 'animate-pulse' : ''}`} style={pieceStyle} {...getPreviewHandlers(sector, 1)} onClick={() => onClickPiece(1, 'path', pathInnerSingle)} />
-                                                        <path d={pathDouble} fill={isStealableDouble ? '#f59e0b' : ring} stroke="#0f172a" strokeWidth="1" className={`${pieceClasses} ${isStealableDouble ? 'animate-pulse' : ''}`} style={pieceStyle} {...getPreviewHandlers(sector, 2)} onClick={() => onClickPiece(2, 'path', pathDouble)} />
-                                                        <path d={pathTreble} fill={isStealableTreble ? '#f59e0b' : ring} stroke="#0f172a" strokeWidth="1" className={`${pieceClasses} ${isStealableTreble ? 'animate-pulse' : ''}`} style={pieceStyle} {...getPreviewHandlers(sector, 3)} onClick={() => onClickPiece(3, 'path', pathTreble)} />
-                                                        <text x={textPos.x} y={textPos.y} fontSize="16" fill={isSectorStealable ? '#f59e0b' : (isValidTarget ? (gameMode === 'around_the_clock' ? '#f472b6' : colors.text) : '#334155')} textAnchor="middle" dominantBaseline="middle" fontWeight={isValidTarget || isSectorStealable ? "900" : "500"} className={(isValidTarget && gameMode === 'around_the_clock') || isSectorStealable ? 'animate-pulse' : ''}>{sector}</text>
+                                                        <path d={pathOuterSingle} fill={isStealableOuterSingle ? '#f59e0b' : single} stroke="#1e293b" strokeWidth="0.5" className={`${pieceClasses} ${isStealableOuterSingle ? 'animate-pulse' : ''}`} style={pieceStyle} {...getPreviewHandlers(sector, 1)} onClick={(e) => onClickPiece(1, 'path', pathOuterSingle, e)} />
+                                                        <path d={pathInnerSingle} fill={isStealableInnerSingle ? '#f59e0b' : single} stroke="#1e293b" strokeWidth="0.5" className={`${pieceClasses} ${isStealableInnerSingle ? 'animate-pulse' : ''}`} style={pieceStyle} {...getPreviewHandlers(sector, 1)} onClick={(e) => onClickPiece(1, 'path', pathInnerSingle, e)} />
+                                                        <path d={pathDouble} fill={isStealableDouble ? '#f59e0b' : ring} stroke="#0f172a" strokeWidth="1" className={`${pieceClasses} ${isStealableDouble ? 'animate-pulse' : ''}`} style={pieceStyle} {...getPreviewHandlers(sector, 2)} onClick={(e) => onClickPiece(2, 'path', pathDouble, e)} />
+                                                        <path d={pathTreble} fill={isStealableTreble ? '#f59e0b' : ring} stroke="#0f172a" strokeWidth="1" className={`${pieceClasses} ${isStealableTreble ? 'animate-pulse' : ''}`} style={pieceStyle} {...getPreviewHandlers(sector, 3)} onClick={(e) => onClickPiece(3, 'path', pathTreble, e)} />
+                                                        <text x={textPos.x} y={textPos.y} fontSize="16" fill={isSectorStealable ? '#f59e0b' : (isValidTarget ? (gameMode === 'around_the_clock' ? '#f472b6' : colors.text) : '#334155')} textAnchor="middle" dominantBaseline="middle" fontWeight={isValidTarget || isSectorStealable ? "900" : "500"} className={(isValidTarget && gameMode === 'around_the_clock') || isSectorStealable ? 'animate-pulse' : ''} style={{pointerEvents: 'none'}}>{sector}</text>
                                                     </g>
                                                 );
                                             })}
@@ -1237,15 +1272,16 @@
                                                 const isStealableOuterBull = gameMode === 'perdiz' && gameState.lastTurnPlayerIdx !== null && gameState.lastTurnPlayerIdx !== currentPlayerIdx && gameState.lastTurnThrows?.some(t => t.sector === 25 && t.multiplier === 1);
                                                 const isStealableInnerBull = gameMode === 'perdiz' && gameState.lastTurnPlayerIdx !== null && gameState.lastTurnPlayerIdx !== currentPlayerIdx && gameState.lastTurnThrows?.some(t => t.sector === 25 && t.multiplier === 2);
                                                 
-                                                const onClickBull = (multiplier, rTarget) => {
+                                                const onClickBull = (multiplier, rTarget, e) => {
+                                                    e.stopPropagation();
                                                     if (handleHit(25, multiplier)) {
                                                         triggerFeedback({ type: 'circle', cx, cy, r: rTarget });
                                                     }
                                                 };
                                                 return (
                                                     <>
-                                                        <circle cx={cx} cy={cy} r={rOuterBull} fill={isStealableOuterBull ? '#f59e0b' : colors.bullOuter} stroke="#0f172a" strokeWidth="1" className={`${pieceClasses} ${isStealableOuterBull ? 'animate-pulse' : ''}`} style={pieceStyle} {...getPreviewHandlers(25, 1)} onClick={() => onClickBull(1, rOuterBull)} />
-                                                        <circle cx={cx} cy={cy} r={rInnerBull} fill={isStealableInnerBull ? '#b45309' : colors.bullInner} stroke="#0f172a" strokeWidth="1" className={`${pieceClasses} ${isStealableInnerBull ? 'animate-pulse' : ''}`} style={pieceStyle} {...getPreviewHandlers(25, 2)} onClick={() => onClickBull(2, rInnerBull)} />
+                                                        <circle cx={cx} cy={cy} r={rOuterBull} fill={isStealableOuterBull ? '#f59e0b' : colors.bullOuter} stroke="#0f172a" strokeWidth="1" className={`${pieceClasses} ${isStealableOuterBull ? 'animate-pulse' : ''}`} style={pieceStyle} {...getPreviewHandlers(25, 1)} onClick={(e) => onClickBull(1, rOuterBull, e)} />
+                                                        <circle cx={cx} cy={cy} r={rInnerBull} fill={isStealableInnerBull ? '#b45309' : colors.bullInner} stroke="#0f172a" strokeWidth="1" className={`${pieceClasses} ${isStealableInnerBull ? 'animate-pulse' : ''}`} style={pieceStyle} {...getPreviewHandlers(25, 2)} onClick={(e) => onClickBull(2, rInnerBull, e)} />
                                                     </>
                                                 );
                                             })()}

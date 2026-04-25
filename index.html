@@ -10,8 +10,20 @@
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 
+    <!-- MÓDULOS DE FIREBASE -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, setDoc, onSnapshot, collection } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // Exponemos Firebase a React
+        window.fb = {
+            initializeApp, getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged,
+            getFirestore, doc, setDoc, onSnapshot, collection
+        };
+    </script>
+
     <style>
-        /* Bloqueo total y absoluto del scroll para entorno de Tablet/Kiosko */
         body, html {
             background-color: #020617; 
             user-select: none; 
@@ -22,9 +34,8 @@
             height: 100vh;
             margin: 0;
             padding: 0;
-            touch-action: none; /* Bloquea gestos del navegador */
+            touch-action: none;
         }
-        
         ::-webkit-scrollbar { width: 6px; height: 6px; }
         ::-webkit-scrollbar-track { background: transparent; }
         ::-webkit-scrollbar-thumb { background: rgba(6, 182, 212, 0.5); border-radius: 4px; }
@@ -48,6 +59,7 @@
         const IconGamepad = ({ size = 24, className = "" }) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><line x1="6" y1="12" x2="10" y2="12"/><line x1="8" y1="10" x2="8" y2="14"/><line x1="15" y1="13" x2="15.01" y2="13"/><line x1="18" y1="11" x2="18.01" y2="11"/><rect x="2" y="6" width="20" height="12" rx="2"/></svg>;
         const IconList = ({ size = 24, className = "" }) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>;
         const IconPower = ({ size = 24, className = "" }) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M18.36 6.64a9 9 0 1 1-12.73 0"/><line x1="12" y1="2" x2="12" y2="12"/></svg>;
+        const IconQrCode = ({ size = 24, className = "" }) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><rect x="3" y="3" width="6" height="6" rx="1"/><rect x="15" y="3" width="6" height="6" rx="1"/><rect x="3" y="15" width="6" height="6" rx="1"/><path d="M21 15v6"/><path d="M15 21h6"/><path d="M15 15h6"/><path d="M7 7h2"/><path d="M19 7h2"/><path d="M7 19h2"/></svg>;
 
         // --- MATEMÁTICAS DIANA ---
         const polarToCartesian = (cx, cy, r, angleInDegrees) => {
@@ -67,30 +79,140 @@
         const SECTORS = [20, 1, 18, 4, 13, 6, 10, 15, 2, 17, 3, 19, 7, 16, 8, 11, 14, 9, 12, 5];
         const CRICKET_NUMBERS = [20, 19, 18, 17, 16, 15, 25];
 
-        // --- APP ---
-        function App() {
-            const [appState, setAppState] = useState('setup_config');
-            const [numPlayers, setNumPlayers] = useState(2);
-            const [gameMode, setGameMode] = useState('cut_throat'); 
-            const [players, setPlayers] = useState([]);
-            const [tempNames, setTempNames] = useState(['', '']); 
-            
-            const [activeTab, setActiveTab] = useState('board'); 
-            const [currentPlayerIdx, setCurrentPlayerIdx] = useState(0);
-            const [currentTurnThrows, setCurrentTurnThrows] = useState([]);
-            const [lastHit, setLastHit] = useState(null);
-            const [winner, setWinner] = useState(null);
-            const [round, setRound] = useState(1);
-            const [isBust, setIsBust] = useState(false);
-            const [showExitConfirm, setShowExitConfirm] = useState(false);
+        const GAME_MODES = {
+            'cut_throat': { name: 'Cricket Inverso', desc: 'Cerrar del 15 al 20. Dar a un cerrado SUMA PUNTOS AL RIVAL. Gana el que cierra todo con menos puntos.' },
+            'normal_cricket': { name: 'Cricket (Puntos)', desc: 'Cerrar del 15 al 20. Dar a un cerrado TE SUMA PUNTOS. Gana el que cierra todo con más puntos.' },
+            'no_score_cricket': { name: 'Cricket (Sin Puntos)', desc: 'El más rápido. Cerrar del 15 al 20 y Bull. No hay puntos, gana el primero en cerrar.' },
+            '301': { name: '301', desc: 'Llega a 0 exacto. Si te pasas, haces BUST.' },
+            '501': { name: '501', desc: 'Llega a 0 exacto. Clásico de torneo.' },
+            '701': { name: '701', desc: 'Llega a 0 exacto. Partida media/larga.' },
+            '901': { name: '901', desc: 'Llega a 0 exacto. Partida masiva (Ideal equipos).' },
+            'high_score': { name: 'High Score', desc: '7 Rondas. Todos los números valen. Gana el de MAYOR puntuación.' },
+            'around_the_clock': { name: 'Reloj (1 al 20)', desc: 'Acertar del 1 al 20 en orden consecutivo. Gana el primero que llega y acierta al 20.' }
+        };
 
-            const GAME_MODES = {
-                'cut_throat': { name: 'Cricket Inverso', desc: 'Cerrar del 15 al 20. Al darle a un número cerrado, SUMAS PUNTOS A LOS RIVALES. Gana el que cierra todo con menos puntos.' },
-                'normal_cricket': { name: 'Cricket (Puntos)', desc: 'Cerrar del 15 al 20. Al darle a un número cerrado, TE SUMAS PUNTOS A TI MISMO. Gana el que cierra todo con más puntos.' },
-                '301': { name: '301', desc: 'Llega a 0 exacto. Si te pasas, haces BUST.' },
-                '501': { name: '501', desc: 'El clásico de torneo. Llega a 0 exacto.' },
-                'high_score': { name: 'High Score', desc: '7 Rondas. Todos los números valen. Gana el de MAYOR puntuación.' }
+        function App() {
+            // --- FIREBASE INITIALIZATION ---
+            const [fbLoaded, setFbLoaded] = useState(false);
+            const [firebaseDb, setFirebaseDb] = useState(null);
+            const [firebaseAuth, setFirebaseAuth] = useState(null);
+            const [user, setUser] = useState(null);
+
+            useEffect(() => {
+                const checkFb = setInterval(() => {
+                    if (window.fb) {
+                        setFbLoaded(true);
+                        clearInterval(checkFb);
+                        
+                        try {
+                            // --- ¡ATENCIÓN! REEMPLAZA ESTO EN VERCEL ---
+                            // Cuando lo subas a tu GitHub/Vercel, cambia las "TU_API_KEY" por los datos 
+                            // reales de tu proyecto de Firebase.
+                            const firebaseConfig = typeof __firebase_config !== 'undefined'
+                                ? JSON.parse(__firebase_config)
+                                : {
+                                    apiKey: "AIzaSyB0qANx0EICZiBp1wVo4DSzSLNbZlwiR7M",
+                                    authDomain: "manitos-darts.firebaseapp.com",
+                                    projectId: "manitos-darts",
+                                    storageBucket: "manitos-darts.firebasestorage.app",
+                                    messagingSenderId: "570426204253",
+                                    appId: "1:570426204253:web:e7772abc0d2410638e6db4",
+                                    measurementId: "G-0XZ3S9D9Q5"
+                                };
+
+                            const app = window.fb.initializeApp(firebaseConfig);
+                            const auth = window.fb.getAuth(app);
+                            setFirebaseAuth(auth);
+                            setFirebaseDb(window.fb.getFirestore(app));
+
+                            // Auto-Auth Anónimo
+                            const initAuth = async () => {
+                                try {
+                                    if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                                        await window.fb.signInWithCustomToken(auth, __initial_auth_token);
+                                    } else {
+                                        await window.fb.signInAnonymously(auth);
+                                    }
+                                } catch(e) { console.error("Error Auth:", e); }
+                            };
+                            initAuth();
+
+                            window.fb.onAuthStateChanged(auth, setUser);
+
+                        } catch(e) { console.warn("Firebase no configurado correctamente.", e); }
+                    }
+                }, 50);
+                return () => clearInterval(checkFb);
+            }, []);
+
+            // --- ESTADO ÚNICO DEL JUEGO (Sincronizado) ---
+            const [gameState, setGameState] = useState({
+                appState: 'home', // 'home', 'setup_config', 'setup_names', 'playing'
+                gameMode: 'cut_throat',
+                numPlayers: 2,
+                players: [],
+                activeTab: 'board',
+                currentPlayerIdx: 0,
+                currentTurnThrows: [],
+                lastHit: null,
+                winner: null,
+                round: 1,
+                isBust: false
+            });
+
+            // Estados Locales (No se sincronizan)
+            const [isOnline, setIsOnline] = useState(false);
+            const [roomId, setRoomId] = useState(null);
+            const [tempNames, setTempNames] = useState(['', '']); 
+            const [showExitConfirm, setShowExitConfirm] = useState(false);
+            const [showQR, setShowQR] = useState(false);
+            const [joinInput, setJoinInput] = useState('');
+
+            // --- SINCRONIZACIÓN CON FIREBASE ---
+            useEffect(() => {
+                if (!isOnline || !roomId || !firebaseDb || !user) return;
+                
+                // Determinamos la ruta dependiendo de si estamos en Canvas o en Vercel
+                const canvasAppId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+                const roomRef = typeof __firebase_config !== 'undefined'
+                    ? window.fb.doc(firebaseDb, 'artifacts', canvasAppId, 'public', 'data', 'rooms', roomId)
+                    : window.fb.doc(firebaseDb, 'rooms', roomId);
+
+                const unsub = window.fb.onSnapshot(roomRef, (snap) => {
+                    if (snap.exists()) {
+                        setGameState(prev => ({ ...prev, ...snap.data() }));
+                    }
+                }, (err) => console.error("Error Sync:", err));
+
+                return () => unsub();
+            }, [isOnline, roomId, firebaseDb, user]);
+
+            // Función Maestra para actualizar el juego (Local y Online)
+            const updateGame = (updates) => {
+                setGameState(prev => {
+                    const next = { ...prev, ...updates };
+                    if (isOnline && roomId && firebaseDb && user) {
+                        const canvasAppId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+                        const roomRef = typeof __firebase_config !== 'undefined'
+                            ? window.fb.doc(firebaseDb, 'artifacts', canvasAppId, 'public', 'data', 'rooms', roomId)
+                            : window.fb.doc(firebaseDb, 'rooms', roomId);
+                        
+                        window.fb.setDoc(roomRef, next, { merge: true }).catch(e => console.error(e));
+                    }
+                    return next;
+                });
             };
+
+            // Detectar si alguien entra a través de un código QR o Enlace
+            useEffect(() => {
+                const urlParams = new URLSearchParams(window.location.search);
+                const room = urlParams.get('room');
+                if (room && user) {
+                    setIsOnline(true);
+                    setRoomId(room.toUpperCase());
+                    // El estado se actualizará automáticamente por el onSnapshot
+                }
+            }, [user]);
 
             // Helpers de Layout
             const getDynamicGridClass = (totalItems) => {
@@ -99,13 +221,31 @@
                 return 'grid-cols-3 grid-rows-2'; 
             };
 
+            // --- LÓGICA DEL JUEGO (Usando gameState) ---
+            const { appState, gameMode, numPlayers, players, activeTab, currentPlayerIdx, currentTurnThrows, lastHit, winner, round, isBust } = gameState;
+
+            const handleCreateRoom = () => {
+                const id = Math.random().toString(36).substring(2, 6).toUpperCase();
+                setRoomId(id);
+                setIsOnline(true);
+                updateGame({ appState: 'setup_config' });
+            };
+
+            const handleJoinRoom = () => {
+                if (joinInput.trim().length > 0) {
+                    setRoomId(joinInput.trim().toUpperCase());
+                    setIsOnline(true);
+                }
+            };
+
             const handleGoToNames = () => {
                 setTempNames(Array(numPlayers).fill(''));
-                setAppState('setup_names');
+                updateGame({ appState: 'setup_names' });
             };
 
             const initPlayers = () => {
-                const initialScore = (gameMode === '301') ? 301 : (gameMode === '501') ? 501 : 0;
+                const initialScore = ['301', '501', '701', '901'].includes(gameMode) ? parseInt(gameMode) : 
+                                     (gameMode === 'around_the_clock' ? 1 : 0);
                 
                 const newPlayers = tempNames.map((name, i) => ({
                     id: i,
@@ -114,23 +254,25 @@
                     previousRoundScore: initialScore,
                     marks: { 20: 0, 19: 0, 18: 0, 17: 0, 16: 0, 15: 0, 25: 0 }
                 }));
-                setPlayers(newPlayers);
-                setCurrentPlayerIdx(0);
-                setCurrentTurnThrows([]);
-                setLastHit(null);
-                setWinner(null);
-                setRound(1);
-                setIsBust(false);
+                
+                updateGame({
+                    players: newPlayers,
+                    currentPlayerIdx: 0,
+                    currentTurnThrows: [],
+                    lastHit: null,
+                    winner: null,
+                    round: 1,
+                    isBust: false,
+                    activeTab: 'board',
+                    appState: 'playing'
+                });
                 setShowExitConfirm(false);
-                setActiveTab('board'); 
-                setAppState('playing');
             };
 
             const handleHit = (sector, multiplier) => {
                 if (currentTurnThrows.length >= 3 || winner || isBust) return;
                 
-                const isCricket = gameMode.includes('cricket') || gameMode === 'cut_throat';
-                
+                const isCricket = ['cut_throat', 'normal_cricket', 'no_score_cricket'].includes(gameMode);
                 if (isCricket && !CRICKET_NUMBERS.includes(sector)) {
                     handleMiss();
                     return;
@@ -147,53 +289,75 @@
 
                 const throwData = { sector, multiplier, points, text };
                 const newThrows = [...currentTurnThrows, throwData];
-                setCurrentTurnThrows(newThrows);
-                setLastHit(throwData);
+                
+                let newIsBust = isBust;
+                let newWinner = winner;
+                let newPlayers = [...players];
 
-                if (gameMode === '301' || gameMode === '501') {
+                if (['301', '501', '701', '901'].includes(gameMode)) {
                     const currentPointsScored = newThrows.reduce((sum, t) => sum + t.points, 0);
-                    const p = players[currentPlayerIdx];
-                    const remaining = p.previousRoundScore - currentPointsScored;
+                    const remaining = newPlayers[currentPlayerIdx].previousRoundScore - currentPointsScored;
 
                     if (remaining < 0 || remaining === 1) { 
-                        setIsBust(true);
+                        newIsBust = true;
                     } else if (remaining === 0) {
-                        let updatedP = [...players];
-                        updatedP[currentPlayerIdx].score = 0;
-                        setPlayers(updatedP);
-                        setWinner(updatedP[currentPlayerIdx]);
+                        newPlayers[currentPlayerIdx].score = 0;
+                        newWinner = newPlayers[currentPlayerIdx];
+                    }
+                } else if (gameMode === 'around_the_clock') {
+                    let currentTarget = newPlayers[currentPlayerIdx].score;
+                    newThrows.forEach(t => {
+                        if (t.sector === currentTarget) currentTarget++;
+                    });
+                    if (currentTarget > 20) {
+                        newPlayers[currentPlayerIdx].score = currentTarget;
+                        newWinner = newPlayers[currentPlayerIdx];
                     }
                 }
+
+                updateGame({
+                    currentTurnThrows: newThrows,
+                    lastHit: throwData,
+                    isBust: newIsBust,
+                    winner: newWinner,
+                    players: newPlayers
+                });
             };
 
             const handleMiss = () => {
                 if (currentTurnThrows.length >= 3 || winner || isBust) return;
                 const throwData = { sector: 0, multiplier: 0, points: 0, text: `Fallo (Fuera)` };
-                setCurrentTurnThrows([...currentTurnThrows, throwData]);
-                setLastHit(throwData);
+                updateGame({
+                    currentTurnThrows: [...currentTurnThrows, throwData],
+                    lastHit: throwData
+                });
             };
 
             const undoThrow = () => {
                 if (currentTurnThrows.length > 0 && !winner) {
                     const newThrows = [...currentTurnThrows];
                     newThrows.pop();
-                    setCurrentTurnThrows(newThrows);
-                    setLastHit(newThrows.length > 0 ? newThrows[newThrows.length - 1] : null);
-                    setIsBust(false);
+                    updateGame({
+                        currentTurnThrows: newThrows,
+                        lastHit: newThrows.length > 0 ? newThrows[newThrows.length - 1] : null,
+                        isBust: false
+                    });
                 }
             };
 
-            const checkWinnerCricket = (currentPlayers, isCutThroat) => {
+            const checkWinnerCricket = (currentPlayers, mode) => {
                 for (let i = 0; i < currentPlayers.length; i++) {
                     const p = currentPlayers[i];
                     let allClosed = CRICKET_NUMBERS.every(num => p.marks[num] >= 3);
 
                     if (allClosed) {
+                        if (mode === 'no_score_cricket') return p;
+                        
                         let hasWinningScore = true;
                         for (let j = 0; j < currentPlayers.length; j++) {
                             if (i !== j) {
-                                if (isCutThroat && currentPlayers[j].score < p.score) hasWinningScore = false;
-                                if (!isCutThroat && currentPlayers[j].score > p.score) hasWinningScore = false;
+                                if (mode === 'cut_throat' && currentPlayers[j].score < p.score) hasWinningScore = false;
+                                if (mode === 'normal_cricket' && currentPlayers[j].score > p.score) hasWinningScore = false;
                             }
                         }
                         if (hasWinningScore) return p;
@@ -209,7 +373,7 @@
                 let currentP = updatedPlayers[currentPlayerIdx];
                 const pointsScoredThisTurn = currentTurnThrows.reduce((sum, t) => sum + t.points, 0);
 
-                if (gameMode === '301' || gameMode === '501') {
+                if (['301', '501', '701', '901'].includes(gameMode)) {
                     if (isBust) {
                         currentP.score = currentP.previousRoundScore;
                     } else {
@@ -220,8 +384,14 @@
                 else if (gameMode === 'high_score') {
                     currentP.score += pointsScoredThisTurn;
                 }
+                else if (gameMode === 'around_the_clock') {
+                    currentTurnThrows.forEach(t => {
+                        if (t.sector === currentP.score) currentP.score += 1;
+                    });
+                }
                 else {
                     const isCutThroat = gameMode === 'cut_throat';
+                    const isNoScore = gameMode === 'no_score_cricket';
                     
                     currentTurnThrows.forEach(t => {
                         const s = t.sector;
@@ -239,7 +409,7 @@
                                 }
                             }
 
-                            if (marksScored > 0) {
+                            if (marksScored > 0 && !isNoScore) {
                                 const pointsToDistribute = s * marksScored;
                                 if (isCutThroat) {
                                     updatedPlayers.forEach((otherP, idx) => {
@@ -247,7 +417,7 @@
                                             otherP.score += pointsToDistribute;
                                         }
                                     });
-                                } else {
+                                } else { 
                                     const anyRivalOpen = updatedPlayers.some((otherP, idx) => idx !== currentPlayerIdx && otherP.marks[s] < 3);
                                     if (anyRivalOpen) {
                                         currentP.score += pointsToDistribute;
@@ -258,70 +428,121 @@
                     });
                 }
 
-                setPlayers(updatedPlayers);
-                setCurrentTurnThrows([]);
-                setLastHit(null);
-                setIsBust(false);
-
                 let possibleWinner = null;
-                
-                if (gameMode.includes('cricket') || gameMode === 'cut_throat') {
-                    possibleWinner = checkWinnerCricket(updatedPlayers, gameMode === 'cut_throat');
+                if (['cut_throat', 'normal_cricket', 'no_score_cricket'].includes(gameMode)) {
+                    possibleWinner = checkWinnerCricket(updatedPlayers, gameMode);
                 } else if (gameMode === 'high_score') {
                     if (currentPlayerIdx === players.length - 1 && round === 7) {
                         possibleWinner = [...updatedPlayers].sort((a, b) => b.score - a.score)[0];
                     }
                 }
 
-                if (possibleWinner) {
-                    setWinner(possibleWinner);
-                } else if (!winner) {
-                    if (currentPlayerIdx === players.length - 1) {
-                        setRound(r => r + 1);
-                    }
-                    setCurrentPlayerIdx((currentPlayerIdx + 1) % players.length);
-                    setActiveTab('board'); 
+                let nextPlayerIdx = currentPlayerIdx;
+                let nextRound = round;
+
+                if (!possibleWinner && !winner) {
+                    if (currentPlayerIdx === players.length - 1) nextRound++;
+                    nextPlayerIdx = (currentPlayerIdx + 1) % players.length;
                 }
+
+                updateGame({
+                    players: updatedPlayers,
+                    currentTurnThrows: [],
+                    lastHit: null,
+                    isBust: false,
+                    winner: possibleWinner || winner,
+                    currentPlayerIdx: nextPlayerIdx,
+                    round: nextRound,
+                    activeTab: 'board'
+                });
+            };
+
+            const resetGame = () => {
+                updateGame({ appState: 'home' });
+                setIsOnline(false);
+                setRoomId(null);
             };
 
             // --- VISTAS ---
 
+            if (!fbLoaded) return <div className="h-screen w-full flex items-center justify-center bg-slate-950 text-cyan-400 font-bold tracking-widest uppercase">Inicializando Sistema AVS 2.0...</div>;
+
+            const renderHome = () => (
+                <div className="flex-1 flex flex-col items-center justify-center p-4 relative z-10">
+                    <div className="z-10 w-full max-w-lg bg-slate-900/80 backdrop-blur-xl p-8 rounded-3xl border border-cyan-500/30 shadow-[0_0_50px_rgba(6,182,212,0.2)] flex flex-col text-center">
+                        <IconTarget size={80} className="text-cyan-400 mx-auto mb-4 drop-shadow-[0_0_15px_rgba(6,182,212,0.8)]" />
+                        <h1 className="text-5xl font-black text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-fuchsia-500 mb-8 drop-shadow-md">MANITO'S DARTS</h1>
+                        
+                        <div className="space-y-4">
+                            <button onClick={() => updateGame({ appState: 'setup_config' })} className="w-full bg-slate-800/80 hover:bg-slate-700/80 border border-slate-600/50 text-white font-black py-4 px-6 rounded-xl flex items-center justify-center gap-3 text-lg uppercase transition-all shadow-lg">
+                                <IconTarget size={24} /> JUGAR EN LOCAL (Solo Tablet)
+                            </button>
+
+                            <div className="relative py-4">
+                                <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-slate-700/50"></div></div>
+                                <div className="relative flex justify-center"><span className="bg-slate-900 px-4 text-xs font-bold text-slate-500 uppercase tracking-widest">MULTIJUGADOR ONLINE</span></div>
+                            </div>
+
+                            <button onClick={handleCreateRoom} className="w-full bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white font-black py-4 px-6 rounded-xl flex items-center justify-center gap-3 text-lg uppercase transition-all shadow-[0_0_20px_rgba(6,182,212,0.4)]">
+                                <IconQrCode size={24} /> CREAR SALA (Host)
+                            </button>
+
+                            <div className="flex gap-2 mt-4">
+                                <input type="text" placeholder="Código de Sala" value={joinInput} onChange={(e)=>setJoinInput(e.target.value)} className="flex-1 bg-slate-950/80 border-2 border-slate-700/50 text-cyan-300 px-4 py-3 rounded-xl text-center font-bold uppercase focus:border-fuchsia-500 focus:outline-none" />
+                                <button onClick={handleJoinRoom} disabled={joinInput.trim().length === 0} className="bg-fuchsia-600 hover:bg-fuchsia-500 text-white font-bold px-6 rounded-xl transition-colors disabled:opacity-50">UNIRSE</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            );
+
             const renderConfig = () => (
                 <div className="flex-1 flex flex-col items-center justify-center p-4 relative min-h-0 z-10">
                     <div className="z-10 w-full max-w-md bg-slate-900/80 backdrop-blur-xl p-8 rounded-3xl border border-cyan-500/30 shadow-[0_0_50px_rgba(6,182,212,0.2)] flex flex-col min-h-0">
-                        <div className="flex justify-center mb-4 shrink-0"><IconTarget size={80} className="text-cyan-400 drop-shadow-[0_0_15px_rgba(6,182,212,0.8)]" /></div>
                         <h1 className="text-4xl font-black text-center mb-6 tracking-wider text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-fuchsia-500 shrink-0 drop-shadow-md">MANITO'S DARTS</h1>
                         
                         <div className="flex flex-col gap-4 flex-1 overflow-hidden justify-center">
                             <div>
                                 <label className="block text-fuchsia-400 text-sm font-bold mb-1 uppercase flex items-center gap-2"><IconGamepad size={16}/> Juego</label>
-                                <select value={gameMode} onChange={(e) => setGameMode(e.target.value)} className="w-full bg-slate-950/80 border-2 border-slate-700/50 text-white p-3 rounded-xl text-lg font-bold text-center appearance-none cursor-pointer focus:border-fuchsia-500 focus:outline-none backdrop-blur-sm">
-                                    <option value="cut_throat">CRICKET INVERSO</option>
-                                    <option value="normal_cricket">CRICKET (PUNTOS)</option>
-                                    <option value="301">301</option>
-                                    <option value="501">501</option>
-                                    <option value="high_score">HIGH SCORE (7 Rondas)</option>
+                                <select value={gameMode} onChange={(e) => updateGame({ gameMode: e.target.value })} className="w-full bg-slate-950/80 border-2 border-slate-700/50 text-white p-3 rounded-xl text-lg font-bold text-center appearance-none cursor-pointer focus:border-fuchsia-500 focus:outline-none backdrop-blur-sm">
+                                    <optgroup label="Crickets">
+                                        <option value="cut_throat">CRICKET INVERSO</option>
+                                        <option value="normal_cricket">CRICKET (PUNTOS)</option>
+                                        <option value="no_score_cricket">CRICKET (SIN PUNTOS)</option>
+                                    </optgroup>
+                                    <optgroup label="X01 Clásicos">
+                                        <option value="301">301</option>
+                                        <option value="501">501</option>
+                                        <option value="701">701</option>
+                                        <option value="901">901</option>
+                                    </optgroup>
+                                    <optgroup label="Especiales">
+                                        <option value="high_score">HIGH SCORE (7 Rondas)</option>
+                                        <option value="around_the_clock">RELOJ (1 al 20)</option>
+                                    </optgroup>
                                 </select>
                                 <p className="text-slate-300 text-xs mt-2 text-center h-8 flex items-center justify-center px-2 drop-shadow-sm">{GAME_MODES[gameMode].desc}</p>
                             </div>
 
                             <div>
                                 <label className="block text-cyan-400 text-sm font-bold mb-1 uppercase flex items-center gap-2"><IconUsers size={16}/> Jugadores</label>
-                                <select value={numPlayers} onChange={(e) => setNumPlayers(Number(e.target.value))} className="w-full bg-slate-950/80 border-2 border-slate-700/50 text-white p-3 rounded-xl text-lg font-bold text-center cursor-pointer focus:border-cyan-500 focus:outline-none backdrop-blur-sm">
+                                <select value={numPlayers} onChange={(e) => { setNumPlayers(Number(e.target.value)); updateGame({numPlayers: Number(e.target.value)}); }} className="w-full bg-slate-950/80 border-2 border-slate-700/50 text-white p-3 rounded-xl text-lg font-bold text-center cursor-pointer focus:border-cyan-500 focus:outline-none backdrop-blur-sm">
                                     {[1, 2, 3, 4, 5, 6].map(n => <option key={n} value={n}>{n} {n === 1 ? 'Jugador' : 'Jugadores'}</option>)}
                                 </select>
                             </div>
                             
-                            <button onClick={handleGoToNames} className="w-full mt-2 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white font-black py-4 px-6 rounded-xl flex items-center justify-center gap-3 text-xl uppercase active:scale-95 transition-all shadow-[0_0_20px_rgba(6,182,212,0.4)] shrink-0">
-                                Siguiente <IconArrowRight size={24} />
-                            </button>
+                            <div className="flex gap-2 mt-2">
+                                <button onClick={resetGame} className="bg-slate-800/80 hover:bg-slate-700/80 border border-slate-600/50 text-white font-bold py-4 px-4 rounded-xl transition-all"><IconUndo size={24}/></button>
+                                <button onClick={handleGoToNames} className="flex-1 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white font-black py-4 px-6 rounded-xl flex items-center justify-center gap-3 text-xl uppercase active:scale-95 transition-all shadow-[0_0_20px_rgba(6,182,212,0.4)]">
+                                    Siguiente <IconArrowRight size={24} />
+                                </button>
+                            </div>
                         </div>
                     </div>
                 </div>
             );
 
             const renderNames = () => {
-                // Validación: Comprueba que todos los nombres tengan al menos 1 letra (sin contar espacios)
                 const isNamesValid = tempNames.every(name => name.trim().length > 0);
                 
                 return (
@@ -343,7 +564,7 @@
                             </div>
                             
                             <div className="flex gap-4 mt-6 shrink-0">
-                                <button onClick={() => setAppState('setup_config')} className="flex-1 bg-slate-800/80 hover:bg-slate-700/80 backdrop-blur-sm text-white font-bold py-4 rounded-xl transition-all border border-slate-600/50">Atrás</button>
+                                <button onClick={() => updateGame({ appState: 'setup_config' })} className="flex-1 bg-slate-800/80 hover:bg-slate-700/80 backdrop-blur-sm text-white font-bold py-4 rounded-xl transition-all border border-slate-600/50">Atrás</button>
                                 <button 
                                     onClick={initPlayers} 
                                     disabled={!isNamesValid}
@@ -376,13 +597,23 @@
 
                 const currentPlayer = players[currentPlayerIdx];
                 const isTurnComplete = currentTurnThrows.length === 3 || isBust;
-                const isCricket = gameMode.includes('cricket') || gameMode === 'cut_throat';
+                const isCricket = ['cut_throat', 'normal_cricket', 'no_score_cricket'].includes(gameMode);
+                const isNoScore = gameMode === 'no_score_cricket';
+                
+                let currentATCTarget = null;
+                if (gameMode === 'around_the_clock') {
+                    currentATCTarget = currentPlayer.score;
+                    currentTurnThrows.forEach(t => {
+                        if (t.sector === currentATCTarget) currentATCTarget++;
+                    });
+                }
 
                 const currentTurnPoints = currentTurnThrows.reduce((sum, t) => sum + t.points, 0);
                 const getLiveScore = (p, idx) => {
                     if (idx !== currentPlayerIdx) return p.score;
                     if (gameMode === 'high_score') return p.score + currentTurnPoints;
-                    if (gameMode === '301' || gameMode === '501') return isBust ? p.previousRoundScore : (p.previousRoundScore - currentTurnPoints);
+                    if (['301', '501', '701', '901'].includes(gameMode)) return isBust ? p.previousRoundScore : (p.previousRoundScore - currentTurnPoints);
+                    if (gameMode === 'around_the_clock') return currentATCTarget > 20 ? '¡FIN!' : currentATCTarget;
                     return p.score; 
                 };
 
@@ -393,10 +624,10 @@
                             <div className="absolute inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
                                 <div className="bg-slate-900 border border-slate-700 p-8 rounded-3xl max-w-sm w-full text-center shadow-2xl flex flex-col">
                                     <h3 className="text-3xl font-black text-white mb-4 shrink-0">¿Terminar partida?</h3>
-                                    <p className="text-slate-400 mb-8 font-bold flex-1">Volverás a la configuración y se perderá el progreso actual.</p>
+                                    <p className="text-slate-400 mb-8 font-bold flex-1">Volverás al menú principal y se perderá el progreso.</p>
                                     <div className="flex gap-4 shrink-0">
                                         <button onClick={() => setShowExitConfirm(false)} className="flex-1 py-4 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-bold transition-colors">Cancelar</button>
-                                        <button onClick={() => { setShowExitConfirm(false); setAppState('setup_config'); }} className="flex-1 py-4 rounded-xl bg-red-600 hover:bg-red-500 text-white font-black transition-colors shadow-[0_0_15px_rgba(220,38,38,0.4)]">Sí, terminar</button>
+                                        <button onClick={resetGame} className="flex-1 py-4 rounded-xl bg-red-600 hover:bg-red-500 text-white font-black transition-colors shadow-[0_0_15px_rgba(220,38,38,0.4)]">Sí, terminar</button>
                                     </div>
                                 </div>
                             </div>
@@ -408,22 +639,24 @@
                                 <h1 className="text-5xl md:text-7xl lg:text-8xl font-black text-transparent bg-clip-text bg-gradient-to-r from-yellow-300 to-yellow-600 text-center mb-4 uppercase shrink-0">
                                     ¡{winner.name} GANA!
                                 </h1>
-                                {gameMode !== '301' && gameMode !== '501' && (
+                                {['cut_throat', 'normal_cricket', 'high_score'].includes(gameMode) && (
                                     <p className="text-4xl lg:text-5xl text-slate-200 mb-8 font-black border-2 border-yellow-500/50 p-6 rounded-2xl bg-yellow-900/30 backdrop-blur-md shrink-0">{winner.score} pts</p>
+                                )}
+                                {gameMode === 'around_the_clock' && (
+                                    <p className="text-2xl text-slate-300 mb-8 font-bold uppercase tracking-widest bg-yellow-900/30 p-4 rounded-2xl border border-yellow-500/30">¡Ha completado el reloj!</p>
                                 )}
                                 <div className="flex gap-4 shrink-0 mt-auto">
                                     <button onClick={initPlayers} className="bg-slate-800 hover:bg-slate-700 text-white font-bold py-4 px-8 rounded-xl transition-colors text-xl">Revancha</button>
-                                    <button onClick={() => setAppState('setup_config')} className="bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white font-black py-4 px-8 rounded-xl shadow-[0_0_20px_rgba(6,182,212,0.4)] transition-transform active:scale-95 text-xl">Nuevo Juego</button>
+                                    <button onClick={resetGame} className="bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white font-black py-4 px-8 rounded-xl shadow-[0_0_20px_rgba(6,182,212,0.4)] transition-transform active:scale-95 text-xl">Menú Principal</button>
                                 </div>
                             </div>
                         )}
 
-                        {/* NAVEGACIÓN TABS Y SALIR */}
                         <div className="flex bg-slate-900/80 backdrop-blur-md p-2 gap-2 border-b border-slate-700/50 shrink-0 shadow-lg z-20 h-16 md:h-20">
-                            <button onClick={() => setActiveTab('board')} className={`flex-1 h-full rounded-xl font-black flex justify-center items-center gap-2 transition-all ${activeTab === 'board' ? 'bg-cyan-500 text-slate-950 shadow-[0_0_15px_rgba(6,182,212,0.5)] scale-[1.02]' : 'bg-slate-800/60 text-slate-300 hover:bg-slate-700/80'}`}>
+                            <button onClick={() => updateGame({ activeTab: 'board' })} className={`flex-1 h-full rounded-xl font-black flex justify-center items-center gap-2 transition-all ${activeTab === 'board' ? 'bg-cyan-500 text-slate-950 shadow-[0_0_15px_rgba(6,182,212,0.5)] scale-[1.02]' : 'bg-slate-800/60 text-slate-300 hover:bg-slate-700/80'}`}>
                                 <IconTarget size={20} /> <span className="text-xs md:text-base">MARCAR TIRADA</span>
                             </button>
-                            <button onClick={() => setActiveTab('scores')} className={`flex-1 h-full rounded-xl font-black flex justify-center items-center gap-2 transition-all ${activeTab === 'scores' ? 'bg-fuchsia-500 text-white shadow-[0_0_15px_rgba(236,72,153,0.5)] scale-[1.02]' : 'bg-slate-800/60 text-slate-300 hover:bg-slate-700/80'}`}>
+                            <button onClick={() => updateGame({ activeTab: 'scores' })} className={`flex-1 h-full rounded-xl font-black flex justify-center items-center gap-2 transition-all ${activeTab === 'scores' ? 'bg-fuchsia-500 text-white shadow-[0_0_15px_rgba(236,72,153,0.5)] scale-[1.02]' : 'bg-slate-800/60 text-slate-300 hover:bg-slate-700/80'}`}>
                                 <IconList size={20} /> <span className="text-xs md:text-base">PUNTUACIONES</span>
                             </button>
                             <button onClick={() => setShowExitConfirm(true)} className="w-16 md:w-20 h-full rounded-xl font-black bg-red-900/40 text-red-400 hover:bg-red-600 hover:text-white border border-red-900/50 transition-colors flex items-center justify-center backdrop-blur-sm">
@@ -431,15 +664,12 @@
                             </button>
                         </div>
 
-                        {/* ÁREA FLEXIBLE PARA EL CONTENIDO (100% alto restante) */}
                         <div className="flex-1 min-h-0 flex flex-col p-2 md:p-3">
                             
-                            {/* PESTAÑA 1: DIANA */}
                             {activeTab === 'board' && (
-                                <div className="flex flex-row gap-2 md:gap-4 h-full w-full min-h-0">
+                                <div className="flex flex-col md:flex-row gap-2 md:gap-4 h-full w-full min-h-0">
                                     
-                                    {/* IZQ: DIANA GIGANTE */}
-                                    <div className="flex-[3] h-full flex items-center justify-center bg-slate-900/80 backdrop-blur-md rounded-3xl border border-slate-700/50 p-2 relative overflow-hidden shadow-[0_0_30px_rgba(0,0,0,0.5)] min-h-0">
+                                    <div className="flex-[2] md:flex-[3] h-full flex items-center justify-center bg-slate-900/80 backdrop-blur-md rounded-3xl border border-slate-700/50 p-2 relative overflow-hidden shadow-[0_0_30px_rgba(0,0,0,0.5)] min-h-0">
                                         <div className="absolute inset-0 opacity-10" style={{ backgroundImage: 'linear-gradient(#334155 1px, transparent 1px), linear-gradient(90deg, #334155 1px, transparent 1px)', backgroundSize: '20px 20px'}}></div>
                                         <svg viewBox="0 0 340 340" className="w-full h-full object-contain drop-shadow-[0_0_30px_rgba(0,0,0,0.8)] z-10" style={{ touchAction: 'none' }}>
                                             <circle cx={cx} cy={cy} r={maxR + 25} fill="#020617" />
@@ -447,15 +677,18 @@
                                                 const startAngle = i * 18 - 9, endAngle = i * 18 + 9, textAngle = i * 18;
                                                 const textPos = polarToCartesian(cx, cy, maxR + 15, textAngle);
                                                 const { single, ring } = getColors(i);
-                                                const isValidTarget = !isCricket || CRICKET_NUMBERS.includes(sector);
                                                 
+                                                let isValidTarget = true;
+                                                if (isCricket) isValidTarget = CRICKET_NUMBERS.includes(sector);
+                                                if (gameMode === 'around_the_clock') isValidTarget = sector === currentATCTarget;
+
                                                 return (
                                                     <g key={`sector-${sector}`}>
                                                         <path d={describeArc(cx, cy, rTreble, rOuterSingle, startAngle, endAngle)} fill={single} stroke="#1e293b" strokeWidth="0.5" onClick={() => handleHit(sector, 1)} />
                                                         <path d={describeArc(cx, cy, rOuterBull, rInnerSingle, startAngle, endAngle)} fill={single} stroke="#1e293b" strokeWidth="0.5" onClick={() => handleHit(sector, 1)} />
                                                         <path d={describeArc(cx, cy, rOuterSingle, rDouble, startAngle, endAngle)} fill={ring} stroke="#0f172a" strokeWidth="1" onClick={() => handleHit(sector, 2)} />
                                                         <path d={describeArc(cx, cy, rInnerSingle, rTreble, startAngle, endAngle)} fill={ring} stroke="#0f172a" strokeWidth="1" onClick={() => handleHit(sector, 3)} />
-                                                        <text x={textPos.x} y={textPos.y} fontSize="16" fill={isValidTarget ? colors.text : '#475569'} textAnchor="middle" dominantBaseline="middle" fontWeight={isValidTarget ? "900" : "500"}>{sector}</text>
+                                                        <text x={textPos.x} y={textPos.y} fontSize="16" fill={isValidTarget ? (gameMode === 'around_the_clock' ? '#f472b6' : colors.text) : '#334155'} textAnchor="middle" dominantBaseline="middle" fontWeight={isValidTarget ? "900" : "500"} className={isValidTarget && gameMode === 'around_the_clock' ? 'animate-pulse' : ''}>{sector}</text>
                                                     </g>
                                                 );
                                             })}
@@ -464,10 +697,8 @@
                                         </svg>
                                     </div>
 
-                                    {/* DER: PANEL DE CONTROLES */}
-                                    <div className="flex-[2] h-full flex flex-col gap-2 min-h-0">
+                                    <div className="flex-[3] md:flex-[2] h-full flex flex-col gap-2 min-h-0">
                                         
-                                        {/* CONTROLES SUPERIORES */}
                                         <div className={`bg-slate-900/80 backdrop-blur-md border ${isBust ? 'border-red-500 shadow-[0_0_30px_rgba(239,68,68,0.4)]' : 'border-slate-700/50 shadow-[0_0_20px_rgba(0,0,0,0.4)]'} p-3 rounded-2xl flex flex-col shrink-0 transition-colors`}>
                                             <div className="flex justify-between items-center mb-2">
                                                 <div className="flex-1 min-w-0">
@@ -506,11 +737,10 @@
                                             </div>
                                         </div>
 
-                                        {/* MINI MARCADOR INFERIOR - COMPRESIÓN FLEX */}
                                         <div className="flex-1 bg-slate-900/80 backdrop-blur-md border border-slate-700/50 rounded-2xl overflow-hidden flex flex-col min-h-0 shadow-[0_0_20px_rgba(0,0,0,0.4)]">
                                             <div className="bg-slate-950/60 px-3 py-1.5 border-b border-slate-700/50 flex justify-between items-center shrink-0">
                                                 <span className="text-[10px] md:text-xs font-bold text-slate-300 uppercase tracking-widest drop-shadow-md">En vivo</span>
-                                                <span className="text-[9px] md:text-[10px] font-bold text-fuchsia-400 bg-fuchsia-900/40 px-2 rounded-full border border-fuchsia-500/30 drop-shadow-md">
+                                                <span className="text-[9px] md:text-[10px] font-bold text-fuchsia-400 bg-fuchsia-900/40 px-2 rounded-full border border-fuchsia-500/30 drop-shadow-md truncate max-w-[120px]">
                                                     {GAME_MODES[gameMode].name}
                                                 </span>
                                             </div>
@@ -524,10 +754,12 @@
                                                             </tr>
                                                         </thead>
                                                         <tbody className="h-[90%]">
-                                                            <tr className="bg-slate-950/60 border-b border-cyan-800/50">
-                                                                <td className="border-r border-slate-700/50 text-fuchsia-400 font-bold text-[9px] md:text-[10px] uppercase drop-shadow-sm">PTS</td>
-                                                                {players.map((p, i) => <td key={`mini-pts-${p.id}`} className={`border-slate-700/50 font-black text-white text-xs md:text-sm drop-shadow-md ${i === currentPlayerIdx ? 'bg-cyan-900/20' : ''}`}>{p.score}</td>)}
-                                                            </tr>
+                                                            {!isNoScore && (
+                                                                <tr className="bg-slate-950/60 border-b border-cyan-800/50">
+                                                                    <td className="border-r border-slate-700/50 text-fuchsia-400 font-bold text-[9px] md:text-[10px] uppercase drop-shadow-sm">PTS</td>
+                                                                    {players.map((p, i) => <td key={`mini-pts-${p.id}`} className={`border-slate-700/50 font-black text-white text-xs md:text-sm drop-shadow-md ${i === currentPlayerIdx ? 'bg-cyan-900/20' : ''}`}>{p.score}</td>)}
+                                                                </tr>
+                                                            )}
                                                             {CRICKET_NUMBERS.map(num => (
                                                                 <tr key={num}>
                                                                     <td className="border-t border-r border-slate-700/50 text-slate-200 font-black text-xs md:text-sm bg-slate-950/30">{num === 25 ? 'B' : num}</td>
@@ -541,7 +773,10 @@
                                                         {players.map((p, i) => (
                                                             <div key={p.id} className={`bg-slate-950/60 rounded-lg p-1 border flex flex-col items-center justify-center min-h-0 ${i === currentPlayerIdx ? 'border-cyan-500/80 bg-cyan-900/30' : 'border-slate-700/50'}`}>
                                                                 <span className={`text-[9px] md:text-[10px] font-bold uppercase tracking-widest truncate w-full text-center shrink-0 drop-shadow-sm ${i === currentPlayerIdx ? 'text-cyan-400' : 'text-slate-400'}`}>{p.name}</span>
-                                                                <span className={`text-xl md:text-3xl lg:text-4xl font-black min-h-0 drop-shadow-md ${i === currentPlayerIdx ? 'text-white' : 'text-slate-300'}`}>{getLiveScore(p, i)}</span>
+                                                                {gameMode === 'around_the_clock' && i === currentPlayerIdx ? (
+                                                                    <span className="text-[8px] text-fuchsia-400 uppercase tracking-widest mb-[-4px]">Objetivo</span>
+                                                                ) : null}
+                                                                <span className={`text-xl md:text-3xl lg:text-4xl font-black min-h-0 drop-shadow-md ${i === currentPlayerIdx ? (gameMode === 'around_the_clock' ? 'text-fuchsia-400 animate-pulse' : 'text-white') : 'text-slate-300'}`}>{getLiveScore(p, i)}</span>
                                                             </div>
                                                         ))}
                                                     </div>
@@ -553,10 +788,9 @@
                                 </div>
                             )}
 
-                            {/* PESTAÑA 2: PUNTUACIONES GIGANTES COMPRIMIDAS */}
                             {activeTab === 'scores' && (
                                 <div className="flex-1 flex flex-col bg-slate-900/80 backdrop-blur-md border border-slate-700/50 rounded-3xl overflow-hidden shadow-[0_0_30px_rgba(0,0,0,0.5)] min-h-0">
-                                    {!isCricket && (
+                                    {!isCricket && gameMode !== 'around_the_clock' && (
                                         <div className="p-2 md:p-3 bg-slate-950/80 border-b border-slate-700/50 flex justify-end items-center shrink-0">
                                             <span className="text-xs md:text-sm font-bold text-slate-200 bg-slate-800/80 px-3 md:px-4 py-1.5 md:py-2 rounded-full border border-slate-600/50 backdrop-blur-sm">Pts en ronda: <span className="text-cyan-400">+{currentTurnPoints}</span></span>
                                         </div>
@@ -570,7 +804,10 @@
                                                         <span className={`text-sm md:text-xl font-bold uppercase tracking-widest mb-1 md:mb-2 shrink-0 drop-shadow-md ${i === currentPlayerIdx ? 'text-cyan-400' : 'text-slate-400'}`}>
                                                             {p.name} {i === currentPlayerIdx && '(Tirando)'}
                                                         </span>
-                                                        <span className={`text-5xl md:text-7xl lg:text-8xl font-black min-h-0 drop-shadow-lg ${i === currentPlayerIdx ? 'text-white' : 'text-slate-300'}`}>
+                                                        {gameMode === 'around_the_clock' && (
+                                                            <span className="text-xs text-fuchsia-400 uppercase tracking-widest font-bold mb-[-10px] mt-2">Objetivo Actual</span>
+                                                        )}
+                                                        <span className={`text-5xl md:text-7xl lg:text-8xl font-black min-h-0 drop-shadow-lg ${i === currentPlayerIdx ? (gameMode === 'around_the_clock' ? 'text-fuchsia-400' : 'text-white') : 'text-slate-300'}`}>
                                                             {getLiveScore(p, i)}
                                                         </span>
                                                     </div>
@@ -585,10 +822,12 @@
                                                     </tr>
                                                 </thead>
                                                 <tbody className="h-[90%]">
-                                                    <tr className="bg-slate-950/60 border-b-4 border-cyan-800/60">
-                                                        <td className="border-r-2 border-slate-700/80 font-black text-xs md:text-sm text-fuchsia-400 uppercase tracking-widest drop-shadow-md">PUNTOS</td>
-                                                        {players.map((p, i) => <td key={`score-${p.id}`} className={`border-r-2 border-slate-700/80 font-black text-xl md:text-4xl text-white drop-shadow-lg ${i === currentPlayerIdx ? 'bg-cyan-900/30' : ''}`}>{p.score}</td>)}
-                                                    </tr>
+                                                    {!isNoScore && (
+                                                        <tr className="bg-slate-950/60 border-b-4 border-cyan-800/60">
+                                                            <td className="border-r-2 border-slate-700/80 font-black text-xs md:text-sm text-fuchsia-400 uppercase tracking-widest drop-shadow-md">PUNTOS</td>
+                                                            {players.map((p, i) => <td key={`score-${p.id}`} className={`border-r-2 border-slate-700/80 font-black text-xl md:text-4xl text-white drop-shadow-lg ${i === currentPlayerIdx ? 'bg-cyan-900/30' : ''}`}>{p.score}</td>)}
+                                                        </tr>
+                                                    )}
                                                     {CRICKET_NUMBERS.map(num => (
                                                         <tr key={num} className="transition-colors">
                                                             <td className="border-t-2 border-r-2 border-slate-700/80 font-black text-xl md:text-3xl text-slate-200 bg-slate-950/40 drop-shadow-md">{num === 25 ? 'Bull' : num}</td>
@@ -601,25 +840,40 @@
                                     </div>
                                 </div>
                             )}
-
                         </div>
-
                     </div>
                 );
             };
 
             return (
                 <div className="w-full h-full flex flex-col text-white selection:bg-cyan-500 selection:text-white overflow-hidden relative bg-cover bg-center" style={{ backgroundImage: "url('https://images.unsplash.com/photo-1511512578047-dfb367046420?q=80&w=2071&auto=format&fit=crop')" }}>
-                    {/* Capa oscura general para garantizar que todo siga siendo legible */}
                     <div className="absolute inset-0 bg-slate-950/70 z-0"></div>
                     
+                    {/* Header flotante para modo Online */}
+                    {isOnline && roomId && (
+                        <div className="absolute top-2 right-4 z-50 flex items-center gap-2">
+                            <span className="bg-fuchsia-600 px-3 py-1 rounded-full text-xs font-black tracking-widest shadow-lg">ONLINE: {roomId}</span>
+                            <button onClick={() => setShowQR(true)} className="bg-cyan-500 hover:bg-cyan-400 text-slate-900 p-1.5 rounded-full transition-colors"><IconQrCode size={16}/></button>
+                        </div>
+                    )}
+
+                    {/* Modal QR Code */}
+                    {showQR && isOnline && roomId && (
+                        <div className="absolute inset-0 z-50 bg-black/90 backdrop-blur-sm flex flex-col items-center justify-center p-4">
+                            <h2 className="text-3xl font-black text-white mb-2">SALA: <span className="text-fuchsia-400">{roomId}</span></h2>
+                            <p className="text-slate-400 mb-6 font-bold text-center">Escanea con el móvil para entrar como mando</p>
+                            <img src={`https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(window.location.origin + window.location.pathname + '?room=' + roomId)}`} alt="QR Code" className="rounded-xl border-4 border-white shadow-[0_0_40px_rgba(255,255,255,0.2)] mb-8" />
+                            <button onClick={() => setShowQR(false)} className="bg-slate-800 text-white font-bold py-3 px-8 rounded-xl">Cerrar Código QR</button>
+                        </div>
+                    )}
+
+                    {appState === 'home' && renderHome()}
                     {appState === 'setup_config' && renderConfig()}
                     {appState === 'setup_names' && renderNames()}
                     {appState === 'playing' && renderGame()}
                     
-                    {/* VERSION TAG */}
                     <div className="absolute bottom-1 md:bottom-2 right-2 md:right-4 text-cyan-300/60 font-mono text-[10px] md:text-xs font-bold tracking-widest z-50 pointer-events-none drop-shadow-md">
-                        AVS 1.5
+                        AVS 2.1 (Multiplayer)
                     </div>
                 </div>
             );

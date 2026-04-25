@@ -140,7 +140,7 @@
                 return () => clearInterval(checkFb);
             }, []);
 
-            // --- ESTADO ÚNICO DEL JUEGO ---
+            // --- ESTADO ÚNICO DEL JUEGO (Fuente de la Verdad Sincronizada) ---
             const [gameState, setGameState] = useState({
                 appState: 'home', 
                 gameMode: 'cut_throat',
@@ -156,7 +156,7 @@
                 pendingConfirmation: false 
             });
 
-            // Estados Locales
+            // Estados Locales (No se sincronizan, propios del dispositivo)
             const [isOnline, setIsOnline] = useState(false);
             const [roomId, setRoomId] = useState(null);
             const [localPlayerId, setLocalPlayerId] = useState(null); 
@@ -689,7 +689,7 @@
                             )) || 
                             (pendingConfirmation && (
                                 <div className="absolute inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
-                                    <div className="bg-slate-900 border border-slate-700 p-8 rounded-3xl max-w-sm w-full text-center shadow-2xl flex flex-col animate-pulse">
+                                    <div className="bg-slate-900 border border-slate-700 p-8 rounded-3xl max-sm w-full text-center shadow-2xl flex flex-col animate-pulse">
                                         <IconTarget size={60} className="text-cyan-400 mx-auto mb-4" />
                                         <h3 className="text-2xl font-black text-white mb-2 uppercase">Validando Tirada</h3>
                                         <p className="text-slate-400 font-bold">Confirma tu tirada en la Tablet del organizador...</p>
@@ -733,7 +733,7 @@
                         {/* OVERLAY SALIR */}
                         {showExitConfirm && (
                             <div className="absolute inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
-                                <div className="bg-slate-900 border border-slate-700 p-8 rounded-3xl max-w-sm w-full text-center shadow-2xl flex flex-col">
+                                <div className="bg-slate-900 border border-slate-700 p-8 rounded-3xl max-sm w-full text-center shadow-2xl flex flex-col">
                                     <h3 className="text-3xl font-black text-white mb-4 shrink-0">¿Terminar partida?</h3>
                                     <p className="text-slate-400 mb-8 font-bold flex-1">Volverás al menú principal y se perderá el progreso.</p>
                                     <div className="flex gap-4 shrink-0">
@@ -766,13 +766,20 @@
                             </div>
                         )}
 
-                        <div className="flex bg-slate-900/80 backdrop-blur-md p-1 md:p-2 gap-1 md:gap-2 border-b border-slate-700/50 shrink-0 shadow-lg z-20 h-12 md:h-16">
+                        <div className="flex bg-slate-900/80 backdrop-blur-md p-1 md:p-2 gap-1 md:gap-2 border-b border-slate-700/50 shrink-0 shadow-lg z-20 h-12 md:h-20">
                             {isOnline && roomId && !joinedViaUrl && appState !== 'setup_qr' && (
                                 <div className="flex items-center justify-center px-2 md:px-4 bg-slate-800/80 rounded-xl border border-slate-700/50">
                                     <span className="text-fuchsia-400 font-black text-xs md:text-sm mr-1 md:mr-2">{roomId}</span>
                                     <button onClick={() => setShowQR(true)} className="text-cyan-400 hover:text-cyan-300 transition-colors"><IconQrCode size={18}/></button>
                                 </div>
                             )}
+
+                            {/* BLOQUE DE RONDAS */}
+                            <div className="flex flex-col items-center justify-center px-2 md:px-6 bg-slate-800/80 rounded-xl border border-slate-700/50 shrink-0 min-w-[50px] md:min-w-[100px]">
+                                <span className="text-slate-500 font-bold text-[8px] md:text-[10px] uppercase leading-none mb-0.5">Ronda</span>
+                                <span className="text-cyan-400 font-black text-sm md:text-2xl leading-none">{round}</span>
+                            </div>
+
                             <button onClick={() => updateGame({ activeTab: 'board' })} className={`flex-1 h-full rounded-xl font-black flex justify-center items-center gap-2 transition-all ${activeTab === 'board' ? 'bg-cyan-500 text-slate-950 shadow-[0_0_15px_rgba(6,182,212,0.5)] scale-[1.02]' : 'bg-slate-800/60 text-slate-300 hover:bg-slate-700/80'}`}>
                                 <IconTarget size={20} /> <span className="text-[10px] md:text-base">MARCAR TIRADA</span>
                             </button>
@@ -864,7 +871,7 @@
                                             </div>
                                         </div>
 
-                                        <div className={`${joinedViaUrl ? 'hidden md:flex' : 'flex-1'} bg-slate-900/80 backdrop-blur-md border border-slate-700/50 rounded-2xl overflow-hidden flex-col min-h-0 shadow-[0_0_20px_rgba(0,0,0,0.4)]`}>
+                                        <div className={`${joinedViaUrl ? 'hidden md:flex' : 'flex-1'} bg-slate-900/80 backdrop-blur-md border border-slate-700/50 rounded-2xl overflow-hidden flex flex-col min-h-0 shadow-[0_0_20px_rgba(0,0,0,0.4)]`}>
                                             <div className="bg-slate-950/60 px-3 py-1.5 border-b border-slate-700/50 flex justify-between items-center shrink-0">
                                                 <span className="text-[10px] md:text-xs font-bold text-slate-300 uppercase tracking-widest drop-shadow-md">En vivo</span>
                                                 <span className="text-[9px] md:text-[10px] font-bold text-fuchsia-400 bg-fuchsia-900/40 px-2 rounded-full border border-fuchsia-500/30 drop-shadow-md truncate max-w-[120px]">
@@ -875,20 +882,20 @@
                                                 {isCricket ? (
                                                     <table className="w-full h-full text-center border-collapse table-fixed">
                                                         <thead>
-                                                            <tr>
+                                                            <tr className="h-[12%]">
                                                                 <th className="border-b border-slate-700/50 text-slate-400 w-8 md:w-12 text-[9px] md:text-[10px] uppercase">Nº</th>
                                                                 {players.map((p, i) => <th key={p.id} className={`border-b border-slate-700/50 truncate text-[10px] md:text-xs font-black ${i === currentPlayerIdx ? 'text-cyan-400 bg-cyan-900/30' : 'text-slate-200'}`}>{p.name.substring(0,4)}</th>)}
                                                             </tr>
                                                         </thead>
-                                                        <tbody>
+                                                        <tbody className="h-[88%]">
                                                             {!isNoScore && (
-                                                                <tr className="bg-slate-950/60 border-b border-cyan-800/50">
+                                                                <tr className="bg-slate-950/60 border-b border-cyan-800/50 h-[11%]">
                                                                     <td className="border-r border-slate-700/50 text-fuchsia-400 font-bold text-[9px] md:text-[10px] uppercase drop-shadow-sm">PTS</td>
                                                                     {players.map((p, i) => <td key={`mini-pts-${p.id}`} className={`border-slate-700/50 font-black text-white text-xs md:text-sm drop-shadow-md ${i === currentPlayerIdx ? 'bg-cyan-900/20' : ''}`}>{p.score}</td>)}
                                                                 </tr>
                                                             )}
                                                             {CRICKET_NUMBERS.map(num => (
-                                                                <tr key={num}>
+                                                                <tr key={num} className="h-[11%]">
                                                                     <td className="border-t border-r border-slate-700/50 text-slate-200 font-black text-xs md:text-sm bg-slate-950/30">{num === 25 ? 'B' : num}</td>
                                                                     {players.map((p, i) => <td key={`mini-${p.id}-${num}`} className={`border-t border-slate-700/50 relative ${i === currentPlayerIdx ? 'bg-cyan-900/20' : ''}`}>{renderCricketMark(p.marks[num], true)}</td>)}
                                                                 </tr>
@@ -923,7 +930,7 @@
                                         </div>
                                     )}
                                     
-                                    <div className="flex-1 min-h-0 overflow-hidden p-2 md:p-4">
+                                    <div className="flex-1 min-h-0 flex flex-col p-2 md:p-4">
                                         {!isCricket ? (
                                             <div className={`grid gap-3 md:gap-4 w-full h-full ${getDynamicGridClass(players.length)}`}>
                                                 {players.map((p, i) => (
@@ -943,20 +950,20 @@
                                         ) : (
                                             <table className="w-full h-full text-center border-collapse table-fixed">
                                                 <thead>
-                                                    <tr>
+                                                    <tr className="h-[12%]">
                                                         <th className="border-b-4 border-r-2 border-slate-700/80 text-slate-400 w-16 md:w-24 text-sm md:text-lg bg-slate-950/80 backdrop-blur-sm">Num</th>
                                                         {players.map((p, i) => <th key={p.id} className={`border-b-4 border-r-2 border-slate-700/80 ${i === currentPlayerIdx ? 'text-cyan-400 bg-cyan-900/40' : 'text-slate-200 bg-slate-950/80'} font-black text-sm md:text-2xl truncate backdrop-blur-sm drop-shadow-md`}>{p.name.substring(0,8)}</th>)}
                                                     </tr>
                                                 </thead>
-                                                <tbody>
+                                                <tbody className="h-[88%]">
                                                     {!isNoScore && (
-                                                        <tr className="bg-slate-950/60 border-b-4 border-cyan-800/60">
+                                                        <tr className="bg-slate-950/60 border-b-4 border-cyan-800/60 h-[11%]">
                                                             <td className="border-r-2 border-slate-700/80 font-black text-xs md:text-sm text-fuchsia-400 uppercase tracking-widest drop-shadow-md">PUNTOS</td>
                                                             {players.map((p, i) => <td key={`score-${p.id}`} className={`border-r-2 border-slate-700/80 font-black text-xl md:text-4xl text-white drop-shadow-lg ${i === currentPlayerIdx ? 'bg-cyan-900/30' : ''}`}>{p.score}</td>)}
                                                         </tr>
                                                     )}
                                                     {CRICKET_NUMBERS.map(num => (
-                                                        <tr key={num} className="transition-colors">
+                                                        <tr key={num} className="transition-colors h-[11%]">
                                                             <td className="border-t-2 border-r-2 border-slate-700/80 font-black text-xl md:text-3xl text-slate-200 bg-slate-950/40 drop-shadow-md">{num === 25 ? 'Bull' : num}</td>
                                                             {players.map((p, i) => <td key={`${p.id}-${num}`} className={`border-t-2 border-r-2 border-slate-700/80 relative ${i === currentPlayerIdx ? 'bg-cyan-900/30' : 'bg-slate-900/40'}`}>{renderCricketMark(p.marks[num])}</td>)}
                                                         </tr>
@@ -1002,7 +1009,7 @@
                     )}
                     
                     <div className="absolute bottom-1 md:bottom-2 right-2 md:right-4 text-cyan-300/60 font-mono text-[10px] md:text-xs font-bold tracking-widest z-50 pointer-events-none drop-shadow-md">
-                        AVS 3.2
+                        AVS 3.3
                     </div>
                 </div>
             );

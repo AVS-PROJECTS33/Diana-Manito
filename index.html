@@ -105,9 +105,6 @@
                         clearInterval(checkFb);
                         
                         try {
-                            // --- ¡ATENCIÓN! REEMPLAZA ESTO EN VERCEL ---
-                            // Cuando lo subas a tu GitHub/Vercel, cambia las "TU_API_KEY" por los datos 
-                            // reales de tu proyecto de Firebase.
                             const firebaseConfig = typeof __firebase_config !== 'undefined'
                                 ? JSON.parse(__firebase_config)
                                 : {
@@ -125,7 +122,6 @@
                             setFirebaseAuth(auth);
                             setFirebaseDb(window.fb.getFirestore(app));
 
-                            // Auto-Auth Anónimo
                             const initAuth = async () => {
                                 try {
                                     if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
@@ -147,7 +143,7 @@
 
             // --- ESTADO ÚNICO DEL JUEGO (Sincronizado) ---
             const [gameState, setGameState] = useState({
-                appState: 'home', // 'home', 'setup_config', 'setup_names', 'playing'
+                appState: 'home', 
                 gameMode: 'cut_throat',
                 numPlayers: 2,
                 players: [],
@@ -163,16 +159,27 @@
             // Estados Locales (No se sincronizan)
             const [isOnline, setIsOnline] = useState(false);
             const [roomId, setRoomId] = useState(null);
+            const [localPlayerId, setLocalPlayerId] = useState(null); 
+            const [joinedViaUrl, setJoinedViaUrl] = useState(false); // Para saber si es cliente móvil
             const [tempNames, setTempNames] = useState(['', '']); 
             const [showExitConfirm, setShowExitConfirm] = useState(false);
             const [showQR, setShowQR] = useState(false);
-            const [joinInput, setJoinInput] = useState('');
 
             // --- SINCRONIZACIÓN CON FIREBASE ---
             useEffect(() => {
+                const urlParams = new URLSearchParams(window.location.search);
+                const room = urlParams.get('room');
+                
+                if (room && user) {
+                    setIsOnline(true);
+                    setRoomId(room.toUpperCase());
+                    setJoinedViaUrl(true);
+                }
+            }, [user]);
+
+            useEffect(() => {
                 if (!isOnline || !roomId || !firebaseDb || !user) return;
                 
-                // Determinamos la ruta dependiendo de si estamos en Canvas o en Vercel
                 const canvasAppId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
                 const roomRef = typeof __firebase_config !== 'undefined'
                     ? window.fb.doc(firebaseDb, 'artifacts', canvasAppId, 'public', 'data', 'rooms', roomId)
@@ -187,7 +194,6 @@
                 return () => unsub();
             }, [isOnline, roomId, firebaseDb, user]);
 
-            // Función Maestra para actualizar el juego (Local y Online)
             const updateGame = (updates) => {
                 setGameState(prev => {
                     const next = { ...prev, ...updates };
@@ -203,25 +209,19 @@
                 });
             };
 
-            // Detectar si alguien entra a través de un código QR o Enlace
-            useEffect(() => {
-                const urlParams = new URLSearchParams(window.location.search);
-                const room = urlParams.get('room');
-                if (room && user) {
-                    setIsOnline(true);
-                    setRoomId(room.toUpperCase());
-                    // El estado se actualizará automáticamente por el onSnapshot
-                }
-            }, [user]);
-
-            // Helpers de Layout
             const getDynamicGridClass = (totalItems) => {
                 if (totalItems <= 3) return `grid-cols-${totalItems} grid-rows-1`;
                 if (totalItems === 4) return 'grid-cols-2 grid-rows-2';
                 return 'grid-cols-3 grid-rows-2'; 
             };
 
-            // --- LÓGICA DEL JUEGO (Usando gameState) ---
+            // URL Segura sin parámetros previos para el QR
+            const generateSafeQRUrl = () => {
+                const baseUrl = window.location.href.split('?')[0];
+                return `${baseUrl}?room=${roomId}`;
+            };
+
+            // --- LÓGICA DEL JUEGO ---
             const { appState, gameMode, numPlayers, players, activeTab, currentPlayerIdx, currentTurnThrows, lastHit, winner, round, isBust } = gameState;
 
             const handleCreateRoom = () => {
@@ -229,13 +229,6 @@
                 setRoomId(id);
                 setIsOnline(true);
                 updateGame({ appState: 'setup_config' });
-            };
-
-            const handleJoinRoom = () => {
-                if (joinInput.trim().length > 0) {
-                    setRoomId(joinInput.trim().toUpperCase());
-                    setIsOnline(true);
-                }
             };
 
             const handleGoToNames = () => {
@@ -269,7 +262,13 @@
                 setShowExitConfirm(false);
             };
 
+            const isActionAllowed = () => {
+                if (!joinedViaUrl) return true; // Tablet Host puede hacer todo
+                return localPlayerId === currentPlayerIdx; // El móvil solo puede accionar en su turno
+            };
+
             const handleHit = (sector, multiplier) => {
+                if (!isActionAllowed()) return;
                 if (currentTurnThrows.length >= 3 || winner || isBust) return;
                 
                 const isCricket = ['cut_throat', 'normal_cricket', 'no_score_cricket'].includes(gameMode);
@@ -325,6 +324,7 @@
             };
 
             const handleMiss = () => {
+                if (!isActionAllowed()) return;
                 if (currentTurnThrows.length >= 3 || winner || isBust) return;
                 const throwData = { sector: 0, multiplier: 0, points: 0, text: `Fallo (Fuera)` };
                 updateGame({
@@ -334,6 +334,7 @@
             };
 
             const undoThrow = () => {
+                if (!isActionAllowed()) return;
                 if (currentTurnThrows.length > 0 && !winner) {
                     const newThrows = [...currentTurnThrows];
                     newThrows.pop();
@@ -367,6 +368,7 @@
             };
 
             const endTurn = () => {
+                if (!isActionAllowed()) return;
                 if (currentTurnThrows.length < 3 && !isBust) return;
 
                 let updatedPlayers = players.map(p => ({ ...p, marks: { ...p.marks } }));
@@ -465,7 +467,7 @@
 
             // --- VISTAS ---
 
-            if (!fbLoaded) return <div className="h-screen w-full flex items-center justify-center bg-slate-950 text-cyan-400 font-bold tracking-widest uppercase">Inicializando Sistema AVS 2.0...</div>;
+            if (!fbLoaded) return <div className="h-screen w-full flex items-center justify-center bg-slate-950 text-cyan-400 font-bold tracking-widest uppercase">Inicializando Sistema AVS 2.4...</div>;
 
             const renderHome = () => (
                 <div className="flex-1 flex flex-col items-center justify-center p-4 relative z-10">
@@ -486,11 +488,6 @@
                             <button onClick={handleCreateRoom} className="w-full bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white font-black py-4 px-6 rounded-xl flex items-center justify-center gap-3 text-lg uppercase transition-all shadow-[0_0_20px_rgba(6,182,212,0.4)]">
                                 <IconQrCode size={24} /> CREAR SALA (Host)
                             </button>
-
-                            <div className="flex gap-2 mt-4">
-                                <input type="text" placeholder="Código de Sala" value={joinInput} onChange={(e)=>setJoinInput(e.target.value)} className="flex-1 bg-slate-950/80 border-2 border-slate-700/50 text-cyan-300 px-4 py-3 rounded-xl text-center font-bold uppercase focus:border-fuchsia-500 focus:outline-none" />
-                                <button onClick={handleJoinRoom} disabled={joinInput.trim().length === 0} className="bg-fuchsia-600 hover:bg-fuchsia-500 text-white font-bold px-6 rounded-xl transition-colors disabled:opacity-50">UNIRSE</button>
-                            </div>
                         </div>
                     </div>
                 </div>
@@ -577,6 +574,42 @@
                 );
             };
 
+            // NUEVA PANTALLA DE SELECCIÓN DE JUGADOR PARA EL MÓVIL
+            const renderMobilePlayerSelect = () => {
+                if (appState !== 'playing') {
+                    return (
+                        <div className="flex-1 flex flex-col items-center justify-center p-6 relative z-10 text-center">
+                            <IconTarget size={80} className="text-cyan-400 mb-6 animate-pulse drop-shadow-[0_0_15px_rgba(6,182,212,0.8)]" />
+                            <h2 className="text-3xl font-black text-white mb-2">SALA: <span className="text-fuchsia-400">{roomId}</span></h2>
+                            <div className="bg-slate-900/80 p-6 rounded-2xl border border-slate-700/50 shadow-xl backdrop-blur-sm mt-8">
+                                <p className="text-slate-300 font-bold text-lg animate-pulse">Esperando a que la Tablet inicie la partida para seleccionar jugador...</p>
+                            </div>
+                        </div>
+                    );
+                }
+
+                return (
+                    <div className="flex-1 flex flex-col items-center justify-center p-4 relative z-10">
+                        <div className="bg-slate-900/90 backdrop-blur-xl p-8 rounded-3xl border border-cyan-500/30 shadow-[0_0_50px_rgba(6,182,212,0.2)] w-full max-w-md flex flex-col items-center">
+                            <h2 className="text-3xl font-black text-white mb-2">SALA: <span className="text-fuchsia-400">{roomId}</span></h2>
+                            <h3 className="text-xl font-bold text-cyan-400 mb-8 uppercase tracking-widest text-center">Elige tu jugador</h3>
+                            
+                            <div className="grid grid-cols-1 gap-4 w-full overflow-y-auto max-h-[60vh] pr-2">
+                                {players.map((p, i) => (
+                                    <button 
+                                        key={p.id} 
+                                        onClick={() => setLocalPlayerId(i)} 
+                                        className="bg-slate-800 border-2 border-slate-700 hover:border-cyan-500 text-white font-bold text-2xl py-5 rounded-2xl transition-all shadow-md active:scale-95"
+                                    >
+                                        {p.name}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+                    </div>
+                );
+            };
+
             const renderGame = () => {
                 if (players.length === 0) return null;
 
@@ -620,6 +653,17 @@
                 return (
                     <div className="flex-1 flex flex-col min-h-0 w-full relative z-10">
                         
+                        {/* Bloqueo visual si es un móvil y NO es su turno */}
+                        {joinedViaUrl && localPlayerId !== null && localPlayerId !== currentPlayerIdx && activeTab === 'board' && (
+                            <div className="absolute inset-0 z-30 bg-slate-950/80 backdrop-blur-[4px] flex items-center justify-center mt-20 md:mt-24 rounded-3xl m-2 md:m-4">
+                                <div className="bg-slate-900 border-2 border-cyan-500/50 p-8 rounded-3xl shadow-[0_0_50px_rgba(6,182,212,0.4)] text-center animate-pulse max-w-sm">
+                                    <IconTarget size={60} className="text-cyan-400 mx-auto mb-4" />
+                                    <h3 className="text-3xl font-black text-white mb-2">NO ES TU TURNO</h3>
+                                    <p className="text-cyan-400 font-bold text-xl">Esperando a {players[currentPlayerIdx]?.name}...</p>
+                                </div>
+                            </div>
+                        )}
+
                         {showExitConfirm && (
                             <div className="absolute inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
                                 <div className="bg-slate-900 border border-slate-700 p-8 rounded-3xl max-w-sm w-full text-center shadow-2xl flex flex-col">
@@ -645,10 +689,12 @@
                                 {gameMode === 'around_the_clock' && (
                                     <p className="text-2xl text-slate-300 mb-8 font-bold uppercase tracking-widest bg-yellow-900/30 p-4 rounded-2xl border border-yellow-500/30">¡Ha completado el reloj!</p>
                                 )}
-                                <div className="flex gap-4 shrink-0 mt-auto">
-                                    <button onClick={initPlayers} className="bg-slate-800 hover:bg-slate-700 text-white font-bold py-4 px-8 rounded-xl transition-colors text-xl">Revancha</button>
-                                    <button onClick={resetGame} className="bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white font-black py-4 px-8 rounded-xl shadow-[0_0_20px_rgba(6,182,212,0.4)] transition-transform active:scale-95 text-xl">Menú Principal</button>
-                                </div>
+                                {!joinedViaUrl && (
+                                    <div className="flex gap-4 shrink-0 mt-auto">
+                                        <button onClick={initPlayers} className="bg-slate-800 hover:bg-slate-700 text-white font-bold py-4 px-8 rounded-xl transition-colors text-xl">Revancha</button>
+                                        <button onClick={resetGame} className="bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white font-black py-4 px-8 rounded-xl shadow-[0_0_20px_rgba(6,182,212,0.4)] transition-transform active:scale-95 text-xl">Menú Principal</button>
+                                    </div>
+                                )}
                             </div>
                         )}
 
@@ -659,9 +705,15 @@
                             <button onClick={() => updateGame({ activeTab: 'scores' })} className={`flex-1 h-full rounded-xl font-black flex justify-center items-center gap-2 transition-all ${activeTab === 'scores' ? 'bg-fuchsia-500 text-white shadow-[0_0_15px_rgba(236,72,153,0.5)] scale-[1.02]' : 'bg-slate-800/60 text-slate-300 hover:bg-slate-700/80'}`}>
                                 <IconList size={20} /> <span className="text-xs md:text-base">PUNTUACIONES</span>
                             </button>
-                            <button onClick={() => setShowExitConfirm(true)} className="w-16 md:w-20 h-full rounded-xl font-black bg-red-900/40 text-red-400 hover:bg-red-600 hover:text-white border border-red-900/50 transition-colors flex items-center justify-center backdrop-blur-sm">
-                                <IconPower size={24} />
-                            </button>
+                            {!joinedViaUrl ? (
+                                <button onClick={() => setShowExitConfirm(true)} className="w-16 md:w-20 h-full rounded-xl font-black bg-red-900/40 text-red-400 hover:bg-red-600 hover:text-white border border-red-900/50 transition-colors flex items-center justify-center backdrop-blur-sm">
+                                    <IconPower size={24} />
+                                </button>
+                            ) : (
+                                <div className="px-4 h-full rounded-xl font-black bg-cyan-900/30 text-cyan-400 border border-cyan-500/50 flex items-center justify-center shadow-inner truncate max-w-[120px] text-xs">
+                                    MANDO:<br/>{players[localPlayerId]?.name}
+                                </div>
+                            )}
                         </div>
 
                         <div className="flex-1 min-h-0 flex flex-col p-2 md:p-3">
@@ -722,16 +774,18 @@
                                                                 : lastHit ? <span className="text-lg md:text-xl font-black text-white text-center leading-none drop-shadow-md">{lastHit.text}</span>
                                                                           : <span className="text-slate-400 font-bold text-xs">Toca la diana</span>}
                                                     </div>
-                                                    <button onClick={handleMiss} disabled={isTurnComplete || winner} className="flex-1 rounded-xl bg-red-900/40 text-red-400 border border-red-900/50 font-bold text-xs md:text-sm flex items-center justify-center disabled:opacity-30 active:bg-red-900/60 h-full backdrop-blur-sm">
+                                                    <button onClick={handleMiss} disabled={!isActionAllowed() || isTurnComplete || winner} className="flex-1 rounded-xl bg-red-900/40 text-red-400 border border-red-900/50 font-bold text-xs md:text-sm flex items-center justify-center disabled:opacity-30 active:bg-red-900/60 h-full backdrop-blur-sm">
                                                         Fallo
                                                     </button>
                                                 </div>
                                                 <div className="flex gap-2 h-12 md:h-16">
-                                                    <button onClick={undoThrow} disabled={currentTurnThrows.length === 0 || winner} className="flex-1 rounded-xl bg-slate-800/60 text-slate-200 font-bold text-xs md:text-sm flex flex-col md:flex-row gap-1 items-center justify-center disabled:opacity-30 active:bg-slate-700/80 h-full backdrop-blur-sm border border-slate-600/30">
+                                                    <button onClick={undoThrow} disabled={!isActionAllowed() || currentTurnThrows.length === 0 || winner} className="flex-1 rounded-xl bg-slate-800/60 text-slate-200 font-bold text-xs md:text-sm flex flex-col md:flex-row gap-1 items-center justify-center disabled:opacity-30 active:bg-slate-700/80 h-full backdrop-blur-sm border border-slate-600/30">
                                                         <IconUndo size={16} /> <span>Deshacer</span>
                                                     </button>
-                                                    <button onClick={endTurn} disabled={!isTurnComplete || winner} className={`flex-[2] rounded-xl font-black text-sm md:text-lg flex items-center justify-center gap-2 transition-all h-full ${isTurnComplete && !winner ? 'bg-gradient-to-r from-cyan-500 to-blue-600 text-white animate-pulse shadow-[0_0_15px_rgba(6,182,212,0.5)]' : 'bg-slate-800/50 text-slate-500 opacity-50 border border-slate-700/50'}`}>
-                                                        Siguiente <IconArrowRight size={18} />
+                                                    
+                                                    {/* BOTÓN ENVIAR TURNO */}
+                                                    <button onClick={endTurn} disabled={!isActionAllowed() || !isTurnComplete || winner} className={`flex-[2] rounded-xl font-black text-sm md:text-lg flex items-center justify-center gap-2 transition-all h-full ${isTurnComplete && !winner ? 'bg-gradient-to-r from-cyan-500 to-blue-600 text-white animate-pulse shadow-[0_0_15px_rgba(6,182,212,0.5)]' : 'bg-slate-800/50 text-slate-500 opacity-50 border border-slate-700/50'}`}>
+                                                        ENVIAR TURNO <IconArrowRight size={18} />
                                                     </button>
                                                 </div>
                                             </div>
@@ -849,31 +903,39 @@
                 <div className="w-full h-full flex flex-col text-white selection:bg-cyan-500 selection:text-white overflow-hidden relative bg-cover bg-center" style={{ backgroundImage: "url('https://images.unsplash.com/photo-1511512578047-dfb367046420?q=80&w=2071&auto=format&fit=crop')" }}>
                     <div className="absolute inset-0 bg-slate-950/70 z-0"></div>
                     
-                    {/* Header flotante para modo Online */}
-                    {isOnline && roomId && (
+                    {isOnline && roomId && !joinedViaUrl && (
                         <div className="absolute top-2 right-4 z-50 flex items-center gap-2">
                             <span className="bg-fuchsia-600 px-3 py-1 rounded-full text-xs font-black tracking-widest shadow-lg">ONLINE: {roomId}</span>
                             <button onClick={() => setShowQR(true)} className="bg-cyan-500 hover:bg-cyan-400 text-slate-900 p-1.5 rounded-full transition-colors"><IconQrCode size={16}/></button>
                         </div>
                     )}
 
-                    {/* Modal QR Code */}
-                    {showQR && isOnline && roomId && (
+                    {/* Modal QR Único */}
+                    {showQR && isOnline && roomId && !joinedViaUrl && (
                         <div className="absolute inset-0 z-50 bg-black/90 backdrop-blur-sm flex flex-col items-center justify-center p-4">
-                            <h2 className="text-3xl font-black text-white mb-2">SALA: <span className="text-fuchsia-400">{roomId}</span></h2>
-                            <p className="text-slate-400 mb-6 font-bold text-center">Escanea con el móvil para entrar como mando</p>
-                            <img src={`https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(window.location.origin + window.location.pathname + '?room=' + roomId)}`} alt="QR Code" className="rounded-xl border-4 border-white shadow-[0_0_40px_rgba(255,255,255,0.2)] mb-8" />
-                            <button onClick={() => setShowQR(false)} className="bg-slate-800 text-white font-bold py-3 px-8 rounded-xl">Cerrar Código QR</button>
+                            <div className="w-full max-w-lg flex flex-col items-center bg-slate-900 border border-slate-700 p-8 rounded-3xl shadow-2xl">
+                                <h2 className="text-3xl md:text-4xl font-black text-white mb-2">SALA: <span className="text-fuchsia-400">{roomId}</span></h2>
+                                <p className="text-slate-300 mb-6 font-bold text-center">Escanea este código con cualquier móvil para unirse a la partida como mando a distancia.</p>
+                                <img src={`https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(generateSafeQRUrl())}`} alt="QR Sala" className="rounded-xl border-4 border-white w-full max-w-[250px] aspect-square shadow-[0_0_20px_rgba(255,255,255,0.2)] mb-8" />
+                                <button onClick={() => setShowQR(false)} className="w-full bg-slate-800 hover:bg-slate-700 text-white font-bold py-4 rounded-xl transition-colors text-xl">Cerrar Código QR</button>
+                            </div>
                         </div>
                     )}
 
-                    {appState === 'home' && renderHome()}
-                    {appState === 'setup_config' && renderConfig()}
-                    {appState === 'setup_names' && renderNames()}
-                    {appState === 'playing' && renderGame()}
+                    {/* RUTEO PRINCIPAL */}
+                    {joinedViaUrl ? (
+                        localPlayerId === null ? renderMobilePlayerSelect() : (appState === 'playing' ? renderGame() : renderMobileWaiting())
+                    ) : (
+                        <>
+                            {appState === 'home' && renderHome()}
+                            {appState === 'setup_config' && renderConfig()}
+                            {appState === 'setup_names' && renderNames()}
+                            {appState === 'playing' && renderGame()}
+                        </>
+                    )}
                     
                     <div className="absolute bottom-1 md:bottom-2 right-2 md:right-4 text-cyan-300/60 font-mono text-[10px] md:text-xs font-bold tracking-widest z-50 pointer-events-none drop-shadow-md">
-                        AVS 2.1 (Multiplayer)
+                        AVS 2.4 (QR Centralizado)
                     </div>
                 </div>
             );

@@ -16,6 +16,7 @@
             user-select: none; 
             -webkit-user-select: none;
             font-family: system-ui, -apple-system, sans-serif;
+            overflow: hidden; 
         }
         
         ::-webkit-scrollbar { width: 6px; height: 6px; }
@@ -39,6 +40,8 @@
         const IconDart = ({ size = 24, className = "" }) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><line x1="22" y1="2" x2="15" y2="9"/><line x1="10" y1="14" x2="2" y2="22"/><line x1="14" y1="10" x2="10" y2="14"/><path d="M15 9l4 4"/><path d="M22 2l-4-4"/><path d="M16 4l4 4"/></svg>;
         const IconTrophy = ({ size = 24, className = "" }) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"/><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"/><path d="M4 22h16"/><path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22"/><path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22"/><path d="M18 2H6v7a6 6 0 0 0 12 0V2Z"/></svg>;
         const IconGamepad = ({ size = 24, className = "" }) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><line x1="6" y1="12" x2="10" y2="12"/><line x1="8" y1="10" x2="8" y2="14"/><line x1="15" y1="13" x2="15.01" y2="13"/><line x1="18" y1="11" x2="18.01" y2="11"/><rect x="2" y="6" width="20" height="12" rx="2"/></svg>;
+        const IconList = ({ size = 24, className = "" }) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>;
+        const IconPower = ({ size = 24, className = "" }) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M18.36 6.64a9 9 0 1 1-12.73 0"/><line x1="12" y1="2" x2="12" y2="12"/></svg>;
 
         // --- MATEMÁTICAS DIANA ---
         const polarToCartesian = (cx, cy, r, angleInDegrees) => {
@@ -62,18 +65,18 @@
         function App() {
             const [appState, setAppState] = useState('setup_config');
             const [numPlayers, setNumPlayers] = useState(2);
-            const [gameMode, setGameMode] = useState('cut_throat'); // cut_throat, normal_cricket, 301, 501, high_score
+            const [gameMode, setGameMode] = useState('cut_throat'); 
             const [players, setPlayers] = useState([]);
             const [tempNames, setTempNames] = useState(['', '']); 
             
+            const [activeTab, setActiveTab] = useState('board'); 
             const [currentPlayerIdx, setCurrentPlayerIdx] = useState(0);
             const [currentTurnThrows, setCurrentTurnThrows] = useState([]);
             const [lastHit, setLastHit] = useState(null);
             const [winner, setWinner] = useState(null);
             const [round, setRound] = useState(1);
-            
-            // Estado visual para cuando un jugador se pasa de puntos en 301/501
             const [isBust, setIsBust] = useState(false);
+            const [showExitConfirm, setShowExitConfirm] = useState(false); // Estado para confirmación de salida
 
             const GAME_MODES = {
                 'cut_throat': { name: 'Cut Throat Cricket', desc: 'Suma a los rivales. Gana el que cierra todo y tiene MENOS puntos.' },
@@ -95,7 +98,7 @@
                     id: i,
                     name: name.trim() || `JUGADOR ${i + 1}`,
                     score: initialScore, 
-                    previousRoundScore: initialScore, // Guarda el score al inicio de la ronda para el Bust
+                    previousRoundScore: initialScore,
                     marks: { 20: 0, 19: 0, 18: 0, 17: 0, 16: 0, 15: 0, 25: 0 }
                 }));
                 setPlayers(newPlayers);
@@ -105,6 +108,8 @@
                 setWinner(null);
                 setRound(1);
                 setIsBust(false);
+                setShowExitConfirm(false);
+                setActiveTab('board'); 
                 setAppState('playing');
             };
 
@@ -132,16 +137,14 @@
                 setCurrentTurnThrows(newThrows);
                 setLastHit(throwData);
 
-                // Checkeo instantáneo de Bust o Victoria en X01
                 if (gameMode === '301' || gameMode === '501') {
                     const currentPointsScored = newThrows.reduce((sum, t) => sum + t.points, 0);
                     const p = players[currentPlayerIdx];
                     const remaining = p.previousRoundScore - currentPointsScored;
 
-                    if (remaining < 0 || remaining === 1) { // En juegos oficiales no puedes quedar con 1 porque se requiere Doble para acabar, aquí simplificamos a llegar a 0 exacto
+                    if (remaining < 0 || remaining === 1) { 
                         setIsBust(true);
                     } else if (remaining === 0) {
-                        // Victoria instantánea en X01!
                         let updatedP = [...players];
                         updatedP[currentPlayerIdx].score = 0;
                         setPlayers(updatedP);
@@ -163,7 +166,7 @@
                     newThrows.pop();
                     setCurrentTurnThrows(newThrows);
                     setLastHit(newThrows.length > 0 ? newThrows[newThrows.length - 1] : null);
-                    setIsBust(false); // Quitar el bust si deshacemos
+                    setIsBust(false);
                 }
             };
 
@@ -193,21 +196,17 @@
                 let currentP = updatedPlayers[currentPlayerIdx];
                 const pointsScoredThisTurn = currentTurnThrows.reduce((sum, t) => sum + t.points, 0);
 
-                // --- LÓGICA DE X01 (301/501) ---
                 if (gameMode === '301' || gameMode === '501') {
                     if (isBust) {
-                        // Vuelve a la puntuación de inicio de ronda
                         currentP.score = currentP.previousRoundScore;
                     } else {
                         currentP.score = currentP.previousRoundScore - pointsScoredThisTurn;
                         currentP.previousRoundScore = currentP.score;
                     }
                 } 
-                // --- LÓGICA DE HIGH SCORE ---
                 else if (gameMode === 'high_score') {
                     currentP.score += pointsScoredThisTurn;
                 }
-                // --- LÓGICA DE CRICKET ---
                 else {
                     const isCutThroat = gameMode === 'cut_throat';
                     
@@ -230,14 +229,12 @@
                             if (marksScored > 0) {
                                 const pointsToDistribute = s * marksScored;
                                 if (isCutThroat) {
-                                    // Suma a rivales sin cerrar
                                     updatedPlayers.forEach((otherP, idx) => {
                                         if (idx !== currentPlayerIdx && otherP.marks[s] < 3) {
                                             otherP.score += pointsToDistribute;
                                         }
                                     });
                                 } else {
-                                    // Suma para mí mismo (Normal Cricket) si algún rival lo tiene abierto
                                     const anyRivalOpen = updatedPlayers.some((otherP, idx) => idx !== currentPlayerIdx && otherP.marks[s] < 3);
                                     if (anyRivalOpen) {
                                         currentP.score += pointsToDistribute;
@@ -253,13 +250,11 @@
                 setLastHit(null);
                 setIsBust(false);
 
-                // --- COMPROBAR VICTORIA GLOBAL ---
                 let possibleWinner = null;
                 
                 if (gameMode.includes('cricket')) {
                     possibleWinner = checkWinnerCricket(updatedPlayers, gameMode === 'cut_throat');
                 } else if (gameMode === 'high_score') {
-                    // Si todos han tirado en la ronda 7
                     if (currentPlayerIdx === players.length - 1 && round === 7) {
                         possibleWinner = [...updatedPlayers].sort((a, b) => b.score - a.score)[0];
                     }
@@ -268,18 +263,18 @@
                 if (possibleWinner) {
                     setWinner(possibleWinner);
                 } else if (!winner) {
-                    // Pasar turno y gestionar rondas
                     if (currentPlayerIdx === players.length - 1) {
                         setRound(r => r + 1);
                     }
                     setCurrentPlayerIdx((currentPlayerIdx + 1) % players.length);
+                    setActiveTab('board'); 
                 }
             };
 
             const renderConfig = () => (
-                <div className="flex flex-col items-center justify-center min-h-screen p-4 relative">
+                <div className="flex flex-col items-center justify-center min-h-screen p-4 relative bg-slate-950 overflow-y-auto">
                     <div className="absolute inset-0 opacity-20 bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-cyan-900 via-slate-900 to-black pointer-events-none"></div>
-                    <div className="z-10 w-full max-w-md bg-slate-900/90 p-8 rounded-3xl border border-cyan-500/30 shadow-[0_0_40px_rgba(6,182,212,0.15)]">
+                    <div className="z-10 w-full max-w-md bg-slate-900/90 p-8 rounded-3xl border border-cyan-500/30 shadow-[0_0_40px_rgba(6,182,212,0.15)] mt-8 mb-8">
                         <div className="flex justify-center mb-6"><IconTarget size={80} className="text-cyan-400 drop-shadow-[0_0_15px_rgba(6,182,212,0.8)]" /></div>
                         <h1 className="text-4xl font-black text-center mb-8 tracking-wider text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-fuchsia-500">CYBER DARTS</h1>
                         
@@ -311,10 +306,10 @@
             );
 
             const renderNames = () => (
-                <div className="flex flex-col items-center justify-center min-h-screen p-4 relative">
-                    <div className="z-10 w-full max-w-md bg-slate-900/90 p-8 rounded-3xl border border-fuchsia-500/30 shadow-[0_0_40px_rgba(236,72,153,0.15)]">
+                <div className="flex flex-col items-center justify-center min-h-screen p-4 relative bg-slate-950 overflow-y-auto">
+                    <div className="z-10 w-full max-w-md bg-slate-900/90 p-8 rounded-3xl border border-fuchsia-500/30 shadow-[0_0_40px_rgba(236,72,153,0.15)] mt-8 mb-8">
                         <h2 className="text-3xl font-black text-center mb-6 text-fuchsia-400">NOMBRES</h2>
-                        <div className="space-y-4 max-h-[60vh] overflow-y-auto pr-2 pb-2">
+                        <div className="space-y-4 max-h-[50vh] overflow-y-auto pr-2 pb-2">
                             {tempNames.map((name, i) => (
                                 <div key={i} className="relative">
                                     <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none"><IconUser size={20} className="text-slate-500" /></div>
@@ -344,38 +339,55 @@
                 const colors = { dark: '#0f172a', light: '#334155', double1: '#ec4899', double2: '#06b6d4', text: '#f8fafc' };
                 const getColors = (index) => ({ single: index % 2 === 0 ? colors.dark : colors.light, ring: index % 2 === 0 ? colors.double1 : colors.double2 });
 
-                const renderCricketMark = (count) => {
+                // Renderizador de marcas adaptable (tamaño normal o mini)
+                const renderCricketMark = (count, isMini = false) => {
                     if (!count) return null;
-                    if (count === 1) return <span className="text-2xl text-cyan-400 font-bold">/</span>;
-                    if (count === 2) return <span className="text-2xl text-cyan-400 font-bold">X</span>;
-                    return <div className="relative flex items-center justify-center"><span className="text-2xl text-fuchsia-400 font-bold">X</span><div className="absolute w-8 h-8 rounded-full border-2 border-fuchsia-400"></div></div>;
+                    const textClass = isMini ? "text-lg md:text-xl" : "text-3xl md:text-4xl";
+                    const circleClass = isMini ? "w-6 h-6 md:w-8 md:h-8 border-2" : "w-10 h-10 md:w-12 md:h-12 border-[3px]";
+                    
+                    if (count === 1) return <span className={`${textClass} text-cyan-400 font-bold leading-none`}>/</span>;
+                    if (count === 2) return <span className={`${textClass} text-cyan-400 font-bold leading-none`}>X</span>;
+                    return <div className="relative flex items-center justify-center"><span className={`${textClass} text-fuchsia-400 font-bold leading-none`}>X</span><div className={`absolute ${circleClass} rounded-full border-fuchsia-400`}></div></div>;
                 };
 
                 const currentPlayer = players[currentPlayerIdx];
                 const isTurnComplete = currentTurnThrows.length === 3 || isBust;
                 const isCricket = gameMode.includes('cricket');
 
-                // Para visualización en vivo de score durante el turno en X01/High Score
                 const currentTurnPoints = currentTurnThrows.reduce((sum, t) => sum + t.points, 0);
                 const getLiveScore = (p, idx) => {
                     if (idx !== currentPlayerIdx) return p.score;
                     if (gameMode === 'high_score') return p.score + currentTurnPoints;
                     if (gameMode === '301' || gameMode === '501') return isBust ? p.previousRoundScore : (p.previousRoundScore - currentTurnPoints);
-                    return p.score; // Cricket se actualiza al final del turno
+                    return p.score; 
                 };
 
                 return (
-                    <div className="flex flex-col md:flex-row min-h-screen md:h-screen w-full bg-slate-950 p-2 md:p-4 gap-4 text-white relative">
+                    <div className="flex flex-col h-screen w-full bg-slate-950 text-white relative">
                         
+                        {/* MODAL DE CONFIRMACIÓN DE SALIDA */}
+                        {showExitConfirm && (
+                            <div className="absolute inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+                                <div className="bg-slate-900 border border-slate-700 p-8 rounded-3xl max-w-sm w-full text-center shadow-2xl">
+                                    <h3 className="text-3xl font-black text-white mb-4">¿Terminar partida?</h3>
+                                    <p className="text-slate-400 mb-8 font-bold">Volverás a la pantalla de configuración y se perderá todo el progreso actual.</p>
+                                    <div className="flex gap-4">
+                                        <button onClick={() => setShowExitConfirm(false)} className="flex-1 py-4 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-bold transition-colors">Cancelar</button>
+                                        <button onClick={() => { setShowExitConfirm(false); setAppState('setup_config'); }} className="flex-1 py-4 rounded-xl bg-red-600 hover:bg-red-500 text-white font-black transition-colors shadow-[0_0_15px_rgba(220,38,38,0.4)]">Sí, terminar</button>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
                         {/* OVERLAY DE VICTORIA */}
                         {winner && (
-                            <div className="absolute inset-0 z-50 bg-black/90 backdrop-blur-md flex flex-col items-center justify-center p-4">
+                            <div className="absolute inset-0 z-40 bg-black/90 backdrop-blur-md flex flex-col items-center justify-center p-4">
                                 <IconTrophy size={120} className="text-yellow-400 drop-shadow-[0_0_40px_rgba(250,204,21,0.8)] mb-6 animate-bounce" />
                                 <h1 className="text-5xl md:text-7xl font-black text-transparent bg-clip-text bg-gradient-to-r from-yellow-300 to-yellow-600 text-center mb-4 uppercase">
                                     ¡{winner.name} GANA!
                                 </h1>
                                 {gameMode !== '301' && gameMode !== '501' && (
-                                    <p className="text-3xl text-slate-300 mb-12 font-black border-2 border-yellow-500/50 p-4 rounded-2xl bg-yellow-900/20">{winner.score} pts</p>
+                                    <p className="text-4xl text-slate-300 mb-12 font-black border-2 border-yellow-500/50 p-6 rounded-2xl bg-yellow-900/20">{winner.score} pts</p>
                                 )}
                                 
                                 <div className="flex gap-4">
@@ -385,136 +397,203 @@
                             </div>
                         )}
 
-                        {/* CONTENEDOR DIANA */}
-                        <div className="w-full md:flex-1 md:max-w-[45%] flex items-center justify-center bg-slate-900 rounded-3xl border border-slate-800 p-2 min-h-[40vh] md:h-full relative overflow-hidden shrink-0">
-                            <div className="absolute inset-0 opacity-5" style={{ backgroundImage: 'linear-gradient(#334155 1px, transparent 1px), linear-gradient(90deg, #334155 1px, transparent 1px)', backgroundSize: '20px 20px'}}></div>
-                            <svg viewBox="0 0 340 340" className="w-full h-full max-h-[45vh] md:max-h-[95vh] drop-shadow-[0_0_20px_rgba(0,0,0,1)] z-10" style={{ touchAction: 'none' }}>
-                                <circle cx={cx} cy={cy} r={maxR + 25} fill="#020617" />
-                                {SECTORS.map((sector, i) => {
-                                    const startAngle = i * 18 - 9, endAngle = i * 18 + 9, textAngle = i * 18;
-                                    const textPos = polarToCartesian(cx, cy, maxR + 15, textAngle);
-                                    const { single, ring } = getColors(i);
-                                    
-                                    // Atenuar números no válidos en Cricket
-                                    const isValidTarget = !isCricket || CRICKET_NUMBERS.includes(sector);
-                                    const textColor = isValidTarget ? colors.text : '#475569';
-                                    const fw = isValidTarget ? "900" : "500";
-
-                                    return (
-                                        <g key={`sector-${sector}`}>
-                                            <path d={describeArc(cx, cy, rTreble, rOuterSingle, startAngle, endAngle)} fill={single} stroke="#1e293b" strokeWidth="0.5" onClick={() => handleHit(sector, 1)} />
-                                            <path d={describeArc(cx, cy, rOuterBull, rInnerSingle, startAngle, endAngle)} fill={single} stroke="#1e293b" strokeWidth="0.5" onClick={() => handleHit(sector, 1)} />
-                                            <path d={describeArc(cx, cy, rOuterSingle, rDouble, startAngle, endAngle)} fill={ring} stroke="#0f172a" strokeWidth="1" onClick={() => handleHit(sector, 2)} />
-                                            <path d={describeArc(cx, cy, rInnerSingle, rTreble, startAngle, endAngle)} fill={ring} stroke="#0f172a" strokeWidth="1" onClick={() => handleHit(sector, 3)} />
-                                            <text x={textPos.x} y={textPos.y} fontSize="16" fill={textColor} textAnchor="middle" dominantBaseline="middle" fontWeight={fw}>{sector}</text>
-                                        </g>
-                                    );
-                                })}
-                                <circle cx={cx} cy={cy} r={rOuterBull} fill={colors.double2} stroke="#0f172a" strokeWidth="1" onClick={() => handleHit(25, 1)} />
-                                <circle cx={cx} cy={cy} r={rInnerBull} fill={colors.double1} stroke="#0f172a" strokeWidth="1" onClick={() => handleHit(25, 2)} />
-                            </svg>
+                        {/* NAVEGACIÓN POR PESTAÑAS (TABS) Y BOTÓN SALIR */}
+                        <div className="flex bg-slate-900 p-2 gap-2 border-b border-slate-800 shrink-0 shadow-md z-20">
+                            <button onClick={() => setActiveTab('board')} className={`flex-1 py-3 md:py-4 rounded-xl font-black flex justify-center items-center gap-2 transition-all ${activeTab === 'board' ? 'bg-cyan-500 text-slate-950 shadow-[0_0_15px_rgba(6,182,212,0.5)] scale-[1.02]' : 'bg-slate-800 text-slate-400 hover:bg-slate-700'}`}>
+                                <IconTarget size={20} /> <span className="text-sm md:text-base">MARCAR TIRADA</span>
+                            </button>
+                            <button onClick={() => setActiveTab('scores')} className={`flex-1 py-3 md:py-4 rounded-xl font-black flex justify-center items-center gap-2 transition-all ${activeTab === 'scores' ? 'bg-fuchsia-500 text-white shadow-[0_0_15px_rgba(236,72,153,0.5)] scale-[1.02]' : 'bg-slate-800 text-slate-400 hover:bg-slate-700'}`}>
+                                <IconList size={20} /> <span className="text-sm md:text-base">PUNTUACIONES</span>
+                            </button>
+                            <button onClick={() => setShowExitConfirm(true)} className="px-4 py-3 md:py-4 rounded-xl font-black bg-red-900/30 text-red-500 hover:bg-red-600 hover:text-white border border-red-900/50 transition-colors flex items-center justify-center">
+                                <IconPower size={20} />
+                            </button>
                         </div>
 
-                        {/* CONTENEDOR MARCADOR Y CONTROLES */}
-                        <div className="flex-1 flex flex-col gap-4 pb-4 md:pb-0 md:h-full">
+                        {/* ÁREA DE CONTENIDO */}
+                        <div className="flex-1 overflow-y-auto relative p-2 md:p-4">
                             
-                            {/* PANEL DE CONTROL SUPERIOR */}
-                            <div className={`bg-slate-900 border ${isBust ? 'border-red-500 shadow-[0_0_30px_rgba(239,68,68,0.2)]' : 'border-slate-800 shadow-lg'} p-4 md:p-6 rounded-3xl flex flex-col justify-between shrink-0 transition-colors`}>
-                                <div className="flex justify-between items-center mb-6">
-                                    <div className="flex-1 overflow-hidden">
-                                        <span className="text-slate-400 text-xs uppercase font-bold tracking-widest">
-                                            Turno de {gameMode === 'high_score' && <span className="text-fuchsia-400 ml-2">- Ronda {round}/7</span>}
-                                        </span>
-                                        <h3 className="text-3xl md:text-4xl font-black text-cyan-400 truncate">{currentPlayer.name}</h3>
-                                    </div>
-                                    <div className="flex gap-2">
-                                        {[0, 1, 2].map(i => {
-                                            const isThrown = i < currentTurnThrows.length;
-                                            return <div key={i} className={`w-12 h-12 md:w-14 md:h-14 rounded-full flex items-center justify-center border-2 ${isThrown ? (isBust ? 'border-red-500 bg-red-500/20' : 'border-fuchsia-500 bg-fuchsia-500/20 shadow-[0_0_15px_rgba(236,72,153,0.5)]') : 'border-slate-700 bg-slate-800'}`}><IconDart size={20} className={isThrown ? (isBust ? 'text-red-400' : 'text-fuchsia-400') : 'text-slate-600'} /></div>;
-                                        })}
-                                    </div>
-                                </div>
+                            {/* PESTAÑA 1: DIANA Y TIRADAS */}
+                            {activeTab === 'board' && (
+                                <div className="flex flex-col md:flex-row gap-4 h-full">
+                                    {/* DIANA GIGANTE */}
+                                    <div className="w-full md:flex-[5] lg:flex-[3] flex items-center justify-center bg-slate-900 rounded-3xl border border-slate-800 p-2 min-h-[40vh] md:min-h-0 relative overflow-hidden shadow-inner">
+                                        <div className="absolute inset-0 opacity-5" style={{ backgroundImage: 'linear-gradient(#334155 1px, transparent 1px), linear-gradient(90deg, #334155 1px, transparent 1px)', backgroundSize: '20px 20px'}}></div>
+                                        <svg viewBox="0 0 340 340" className="w-full h-full max-h-[45vh] md:max-h-[85vh] drop-shadow-[0_0_20px_rgba(0,0,0,1)] z-10" style={{ touchAction: 'none' }}>
+                                            <circle cx={cx} cy={cy} r={maxR + 25} fill="#020617" />
+                                            {SECTORS.map((sector, i) => {
+                                                const startAngle = i * 18 - 9, endAngle = i * 18 + 9, textAngle = i * 18;
+                                                const textPos = polarToCartesian(cx, cy, maxR + 15, textAngle);
+                                                const { single, ring } = getColors(i);
+                                                
+                                                const isValidTarget = !isCricket || CRICKET_NUMBERS.includes(sector);
+                                                const textColor = isValidTarget ? colors.text : '#475569';
+                                                const fw = isValidTarget ? "900" : "500";
 
-                                <div className="flex flex-col gap-2 md:gap-3">
-                                    <div className="flex gap-2 md:gap-3">
-                                        <div className={`flex-[2] bg-slate-950 border ${isBust ? 'border-red-500/50' : 'border-slate-800'} rounded-xl p-2 md:p-3 flex items-center justify-center h-14 md:h-16 relative overflow-hidden`}>
-                                            {isBust ? (
-                                                <span className="text-2xl font-black text-red-500 animate-pulse">¡BUST! (Te pasaste)</span>
-                                            ) : lastHit ? (
-                                                <span className="text-lg md:text-2xl font-black text-white z-10">{lastHit.text}</span>
-                                            ) : (
-                                                <span className="text-slate-600 font-bold text-xs md:text-sm z-10">Toca la diana</span>
-                                            )}
-                                        </div>
-                                        <button onClick={handleMiss} disabled={isTurnComplete || winner} className="flex-1 h-14 md:h-16 rounded-xl bg-red-900/20 text-red-400 border border-red-900/50 font-bold flex items-center justify-center disabled:opacity-30 active:bg-red-900/40 transition-colors">
-                                            Fallo
-                                        </button>
+                                                return (
+                                                    <g key={`sector-${sector}`}>
+                                                        <path d={describeArc(cx, cy, rTreble, rOuterSingle, startAngle, endAngle)} fill={single} stroke="#1e293b" strokeWidth="0.5" onClick={() => handleHit(sector, 1)} />
+                                                        <path d={describeArc(cx, cy, rOuterBull, rInnerSingle, startAngle, endAngle)} fill={single} stroke="#1e293b" strokeWidth="0.5" onClick={() => handleHit(sector, 1)} />
+                                                        <path d={describeArc(cx, cy, rOuterSingle, rDouble, startAngle, endAngle)} fill={ring} stroke="#0f172a" strokeWidth="1" onClick={() => handleHit(sector, 2)} />
+                                                        <path d={describeArc(cx, cy, rInnerSingle, rTreble, startAngle, endAngle)} fill={ring} stroke="#0f172a" strokeWidth="1" onClick={() => handleHit(sector, 3)} />
+                                                        <text x={textPos.x} y={textPos.y} fontSize="16" fill={textColor} textAnchor="middle" dominantBaseline="middle" fontWeight={fw}>{sector}</text>
+                                                    </g>
+                                                );
+                                            })}
+                                            <circle cx={cx} cy={cy} r={rOuterBull} fill={colors.double2} stroke="#0f172a" strokeWidth="1" onClick={() => handleHit(25, 1)} />
+                                            <circle cx={cx} cy={cy} r={rInnerBull} fill={colors.double1} stroke="#0f172a" strokeWidth="1" onClick={() => handleHit(25, 2)} />
+                                        </svg>
                                     </div>
-                                    <div className="flex gap-2 md:gap-3">
-                                        <button onClick={undoThrow} disabled={currentTurnThrows.length === 0 || winner} className="h-14 md:h-16 flex-1 rounded-xl bg-slate-800 text-slate-300 font-bold flex gap-2 disabled:opacity-30 active:bg-slate-700 items-center justify-center transition-colors">
-                                            <IconUndo size={20} /> <span className="hidden sm:inline">Deshacer</span>
-                                        </button>
-                                        <button onClick={endTurn} disabled={!isTurnComplete || winner} className={`h-14 md:h-16 flex-[2] rounded-xl font-black flex items-center justify-center gap-2 transition-all ${isTurnComplete && !winner ? 'bg-gradient-to-r from-cyan-500 to-blue-600 text-white animate-pulse shadow-[0_0_15px_rgba(6,182,212,0.4)]' : 'bg-slate-800 text-slate-500 opacity-50 cursor-not-allowed'}`}>
-                                            Siguiente Jugador <IconArrowRight size={20} />
-                                        </button>
-                                    </div>
-                                </div>
-                            </div>
 
-                            {/* TABLA DE PUNTUACIONES (Adaptable) */}
-                            <div className="flex-1 bg-slate-900 border border-slate-800 rounded-3xl overflow-hidden flex flex-col shadow-lg">
-                                <div className="p-3 bg-slate-950 border-b border-slate-800 flex justify-between items-center">
-                                    <h2 className="text-sm font-black text-fuchsia-400 uppercase tracking-widest">{GAME_MODES[gameMode].name}</h2>
-                                    {!isCricket && <span className="text-xs font-bold text-slate-500 bg-slate-800 px-3 py-1 rounded-full">Pts en ronda: +{currentTurnPoints}</span>}
-                                </div>
-                                
-                                <div className="flex-1 overflow-x-auto overflow-y-auto p-4 flex flex-col">
-                                    
-                                    {/* MODO NO-CRICKET (301, 501, High Score) */}
-                                    {!isCricket && (
-                                        <div className="grid grid-cols-2 gap-4 h-full">
-                                            {players.map((p, i) => (
-                                                <div key={p.id} className={`bg-slate-950 rounded-2xl border-2 flex flex-col items-center justify-center p-4 ${i === currentPlayerIdx ? 'border-cyan-500 shadow-[0_0_20px_rgba(6,182,212,0.2)]' : 'border-slate-800'}`}>
-                                                    <span className={`text-sm font-bold uppercase tracking-widest mb-2 ${i === currentPlayerIdx ? 'text-cyan-400' : 'text-slate-500'}`}>{p.name}</span>
-                                                    <span className={`text-5xl md:text-6xl font-black ${i === currentPlayerIdx ? 'text-white' : 'text-slate-400'}`}>
-                                                        {getLiveScore(p, i)}
+                                    {/* PANEL LATERAL: CONTROLES Y MINI MARCADOR */}
+                                    <div className="w-full md:flex-[4] lg:flex-[2] flex flex-col gap-3 h-full overflow-hidden">
+                                        
+                                        {/* Acciones de la tirada */}
+                                        <div className={`bg-slate-900 border ${isBust ? 'border-red-500 shadow-[0_0_30px_rgba(239,68,68,0.2)]' : 'border-slate-800 shadow-xl'} p-4 md:p-5 rounded-2xl flex flex-col transition-colors shrink-0`}>
+                                            <div className="flex justify-between items-center mb-4">
+                                                <div className="flex-1 overflow-hidden">
+                                                    <span className="text-slate-400 text-[10px] md:text-xs uppercase font-bold tracking-widest block mb-1">
+                                                        Turno de {gameMode === 'high_score' && <span className="text-fuchsia-400">- R{round}/7</span>}
                                                     </span>
+                                                    <h3 className="text-2xl md:text-3xl lg:text-4xl font-black text-cyan-400 truncate leading-none">{currentPlayer.name}</h3>
                                                 </div>
-                                            ))}
-                                        </div>
-                                    )}
+                                                <div className="flex gap-2 shrink-0 ml-2">
+                                                    {[0, 1, 2].map(i => {
+                                                        const isThrown = i < currentTurnThrows.length;
+                                                        return <div key={i} className={`w-10 h-10 md:w-12 md:h-12 rounded-full flex items-center justify-center border-2 transition-all ${isThrown ? (isBust ? 'border-red-500 bg-red-500/20' : 'border-fuchsia-500 bg-fuchsia-500/20 shadow-[0_0_15px_rgba(236,72,153,0.5)]') : 'border-slate-700 bg-slate-800'}`}><IconDart size={18} className={isThrown ? (isBust ? 'text-red-400' : 'text-fuchsia-400') : 'text-slate-600'} /></div>;
+                                                    })}
+                                                </div>
+                                            </div>
 
-                                    {/* MODO CRICKET */}
-                                    {isCricket && (
-                                        <table className="w-full text-center border-collapse min-w-[300px]">
-                                            <thead className="sticky top-0 bg-slate-900 z-10 shadow-sm border-b border-slate-700">
-                                                <tr>
-                                                    <th className="p-2 border-r border-slate-700 text-slate-500 w-16 text-sm bg-slate-900">Num</th>
-                                                    {players.map((p, i) => <th key={p.id} className={`p-2 border-r border-slate-700 ${i === currentPlayerIdx ? 'text-cyan-400' : 'text-white'} font-black text-base md:text-lg truncate max-w-[80px] bg-slate-900`}>{p.name.substring(0,6)}</th>)}
-                                                </tr>
-                                            </thead>
-                                            <tbody>
-                                                <tr className="bg-slate-950/80 border-b-2 border-cyan-900">
-                                                    <td className="p-2 border-r border-slate-800 font-bold text-xs text-fuchsia-400 uppercase tracking-widest">PTS</td>
-                                                    {players.map(p => <td key={`score-${p.id}`} className="p-2 border-r border-slate-800 h-10 md:h-12 font-black text-xl md:text-2xl text-white">{p.score}</td>)}
-                                                </tr>
-                                                {CRICKET_NUMBERS.map(num => (
-                                                    <tr key={num} className="hover:bg-slate-800/50">
-                                                        <td className="p-2 border-b border-r border-slate-800 font-black text-lg md:text-xl text-slate-300 bg-slate-950/50">{num === 25 ? 'B' : num}</td>
-                                                        {players.map(p => <td key={`${p.id}-${num}`} className="p-2 border-b border-r border-slate-800 h-10 md:h-12 relative">{renderCricketMark(p.marks[num])}</td>)}
-                                                    </tr>
-                                                ))}
-                                            </tbody>
-                                        </table>
-                                    )}
+                                            <div className="flex flex-col gap-2">
+                                                <div className="flex gap-2">
+                                                    <div className={`flex-[2] bg-slate-950 border ${isBust ? 'border-red-500/50' : 'border-slate-800'} rounded-xl p-2 flex items-center justify-center h-14 relative overflow-hidden`}>
+                                                        {isBust ? (
+                                                            <span className="text-xl font-black text-red-500 animate-pulse text-center leading-none">¡BUST!</span>
+                                                        ) : lastHit ? (
+                                                            <span className="text-xl md:text-2xl font-black text-white z-10 text-center leading-none">{lastHit.text}</span>
+                                                        ) : (
+                                                            <span className="text-slate-600 font-bold text-sm z-10">Toca la diana</span>
+                                                        )}
+                                                    </div>
+                                                    <button onClick={handleMiss} disabled={isTurnComplete || winner} className="flex-1 h-14 rounded-xl bg-red-900/20 text-red-400 border border-red-900/50 font-bold text-sm md:text-base flex items-center justify-center disabled:opacity-30 active:bg-red-900/40 transition-colors">
+                                                        Fallo
+                                                    </button>
+                                                </div>
+                                                <div className="flex gap-2">
+                                                    <button onClick={undoThrow} disabled={currentTurnThrows.length === 0 || winner} className="h-14 flex-1 rounded-xl bg-slate-800 text-slate-300 font-bold text-sm md:text-base flex gap-2 disabled:opacity-30 active:bg-slate-700 items-center justify-center transition-colors">
+                                                        <IconUndo size={18} /> <span className="hidden lg:inline">Deshacer</span>
+                                                    </button>
+                                                    <button onClick={endTurn} disabled={!isTurnComplete || winner} className={`h-14 flex-[2] rounded-xl font-black text-base md:text-lg flex items-center justify-center gap-2 transition-all ${isTurnComplete && !winner ? 'bg-gradient-to-r from-cyan-500 to-blue-600 text-white animate-pulse shadow-[0_0_15px_rgba(6,182,212,0.4)]' : 'bg-slate-800 text-slate-500 opacity-50 cursor-not-allowed'}`}>
+                                                        Siguiente <IconArrowRight size={20} />
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        {/* ¡NUEVO! MINI MARCADOR EN VIVO DENTRO DE LA PESTAÑA DIANA */}
+                                        <div className="flex-1 bg-slate-950 border border-slate-800 rounded-2xl overflow-hidden flex flex-col min-h-[200px] shadow-lg">
+                                            <div className="bg-slate-900/80 px-4 py-2 border-b border-slate-800 flex justify-between items-center shrink-0">
+                                                <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">Marcador en vivo</span>
+                                                <span className="text-[10px] font-bold text-fuchsia-400 bg-fuchsia-900/30 px-2 py-0.5 rounded-full border border-fuchsia-900/50">
+                                                    {GAME_MODES[gameMode].name}
+                                                </span>
+                                            </div>
+                                            <div className="flex-1 overflow-auto p-1">
+                                                {isCricket ? (
+                                                    <table className="w-full text-center border-collapse text-sm">
+                                                        <thead className="bg-slate-900 sticky top-0 z-10 shadow-sm">
+                                                            <tr>
+                                                                <th className="p-1.5 border-b border-slate-700 text-slate-500 w-10 text-[10px] uppercase">Nº</th>
+                                                                {players.map((p, i) => <th key={p.id} className={`p-1.5 border-b border-slate-700 truncate max-w-[50px] text-xs font-black ${i === currentPlayerIdx ? 'text-cyan-400 bg-cyan-950/20' : 'text-slate-300'}`}>{p.name.substring(0,4)}</th>)}
+                                                            </tr>
+                                                        </thead>
+                                                        <tbody>
+                                                            <tr className="bg-slate-900/50 border-b-2 border-cyan-900/50">
+                                                                <td className="p-1.5 border-b border-r border-slate-800 text-fuchsia-400 font-bold text-[10px] uppercase">PTS</td>
+                                                                {players.map((p, i) => <td key={`mini-pts-${p.id}`} className={`p-1.5 border-b border-slate-800 font-black text-white ${i === currentPlayerIdx ? 'bg-cyan-950/10' : ''}`}>{p.score}</td>)}
+                                                            </tr>
+                                                            {CRICKET_NUMBERS.map(num => (
+                                                                <tr key={num} className="hover:bg-slate-800/50">
+                                                                    <td className="p-1 border-b border-r border-slate-800 text-slate-300 font-black text-sm">{num === 25 ? 'B' : num}</td>
+                                                                    {players.map((p, i) => <td key={`mini-${p.id}-${num}`} className={`p-1 border-b border-slate-800 h-8 relative ${i === currentPlayerIdx ? 'bg-cyan-950/10' : ''}`}>{renderCricketMark(p.marks[num], true)}</td>)}
+                                                                </tr>
+                                                            ))}
+                                                        </tbody>
+                                                    </table>
+                                                ) : (
+                                                    <div className="grid grid-cols-2 lg:grid-cols-3 gap-2 p-2">
+                                                        {players.map((p, i) => (
+                                                            <div key={p.id} className={`bg-slate-900/50 rounded-xl p-3 border flex flex-col items-center justify-center ${i === currentPlayerIdx ? 'border-cyan-500 bg-cyan-950/20' : 'border-slate-800'}`}>
+                                                                <span className={`text-[10px] md:text-xs font-bold uppercase tracking-widest mb-1 truncate w-full text-center ${i === currentPlayerIdx ? 'text-cyan-400' : 'text-slate-500'}`}>{p.name}</span>
+                                                                <span className={`text-2xl md:text-3xl font-black ${i === currentPlayerIdx ? 'text-white' : 'text-slate-400'}`}>{getLiveScore(p, i)}</span>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </div>
+                                    </div>
                                 </div>
-                            </div>
+                            )}
+
+                            {/* PESTAÑA 2: PUNTUACIONES GIGANTES */}
+                            {activeTab === 'scores' && (
+                                <div className="h-full bg-slate-900 border border-slate-800 rounded-3xl overflow-hidden flex flex-col shadow-xl">
+                                    <div className="p-4 bg-slate-950 border-b border-slate-800 flex justify-between items-center shrink-0">
+                                        <h2 className="text-xl md:text-2xl font-black text-fuchsia-400 uppercase tracking-widest">{GAME_MODES[gameMode].name}</h2>
+                                        {!isCricket && <span className="text-sm font-bold text-slate-300 bg-slate-800 px-4 py-2 rounded-full border border-slate-700">Pts en ronda actual: <span className="text-cyan-400">+{currentTurnPoints}</span></span>}
+                                    </div>
+                                    
+                                    <div className="flex-1 overflow-x-auto overflow-y-auto p-4 md:p-8 flex flex-col">
+                                        
+                                        {!isCricket && (
+                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 h-full">
+                                                {players.map((p, i) => (
+                                                    <div key={p.id} className={`bg-slate-950 rounded-3xl border-4 flex flex-col items-center justify-center p-8 ${i === currentPlayerIdx ? 'border-cyan-500 shadow-[0_0_30px_rgba(6,182,212,0.3)]' : 'border-slate-800'}`}>
+                                                        <span className={`text-xl md:text-2xl font-bold uppercase tracking-widest mb-4 ${i === currentPlayerIdx ? 'text-cyan-400' : 'text-slate-500'}`}>
+                                                            {p.name} {i === currentPlayerIdx && '(Tirando)'}
+                                                        </span>
+                                                        <span className={`text-8xl md:text-9xl font-black ${i === currentPlayerIdx ? 'text-white' : 'text-slate-400'}`}>
+                                                            {getLiveScore(p, i)}
+                                                        </span>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        )}
+
+                                        {isCricket && (
+                                            <table className="w-full text-center border-collapse min-w-[500px] h-full">
+                                                <thead className="sticky top-0 bg-slate-900 z-10 shadow-md">
+                                                    <tr>
+                                                        <th className="p-4 border-b-4 border-r-2 border-slate-700 text-slate-500 w-24 text-xl bg-slate-950">Num</th>
+                                                        {players.map((p, i) => <th key={p.id} className={`p-4 border-b-4 border-r-2 border-slate-700 ${i === currentPlayerIdx ? 'text-cyan-400 bg-cyan-950/20' : 'text-white bg-slate-950'} font-black text-2xl md:text-3xl truncate max-w-[150px]`}>{p.name.substring(0,8)} {i === currentPlayerIdx && '*'}</th>)}
+                                                    </tr>
+                                                </thead>
+                                                <tbody>
+                                                    <tr className="bg-slate-950/80 border-b-4 border-cyan-900">
+                                                        <td className="p-4 border-r-2 border-slate-800 font-black text-lg md:text-xl text-fuchsia-400 uppercase tracking-widest">PUNTOS</td>
+                                                        {players.map((p, i) => <td key={`score-${p.id}`} className={`p-4 border-r-2 border-slate-800 font-black text-4xl md:text-5xl text-white ${i === currentPlayerIdx ? 'bg-cyan-950/10' : ''}`}>{p.score}</td>)}
+                                                    </tr>
+                                                    {CRICKET_NUMBERS.map(num => (
+                                                        <tr key={num} className="hover:bg-slate-800/50 transition-colors">
+                                                            <td className="p-4 border-b-2 border-r-2 border-slate-800 font-black text-3xl md:text-4xl text-slate-300 bg-slate-950/50">{num === 25 ? 'Bull' : num}</td>
+                                                            {players.map((p, i) => <td key={`${p.id}-${num}`} className={`p-4 border-b-2 border-r-2 border-slate-800 h-16 relative ${i === currentPlayerIdx ? 'bg-cyan-950/10' : ''}`}>{renderCricketMark(p.marks[num])}</td>)}
+                                                        </tr>
+                                                    ))}
+                                                </tbody>
+                                            </table>
+                                        )}
+                                    </div>
+                                </div>
+                            )}
+
                         </div>
                     </div>
                 );
             };
 
-            return <div className="min-h-screen w-full text-white selection:bg-cyan-500 selection:text-white bg-slate-950">{appState === 'setup_config' && renderConfig()}{appState === 'setup_names' && renderNames()}{appState === 'playing' && renderGame()}</div>;
+            return <div className="h-screen w-full text-white selection:bg-cyan-500 selection:text-white bg-slate-950 overflow-hidden">{appState === 'setup_config' && renderConfig()}{appState === 'setup_names' && renderNames()}{appState === 'playing' && renderGame()}</div>;
         }
 
         const root = ReactDOM.createRoot(document.getElementById('root'));

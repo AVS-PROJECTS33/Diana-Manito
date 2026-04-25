@@ -16,7 +16,6 @@
         import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, doc, setDoc, onSnapshot, collection } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-        // Exponemos Firebase a React
         window.fb = {
             initializeApp, getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged,
             getFirestore, doc, setDoc, onSnapshot, collection
@@ -141,7 +140,7 @@
                 return () => clearInterval(checkFb);
             }, []);
 
-            // --- ESTADO ÚNICO DEL JUEGO (Sincronizado) ---
+            // --- ESTADO ÚNICO DEL JUEGO (Fuente de la Verdad Sincronizada) ---
             const [gameState, setGameState] = useState({
                 appState: 'home', 
                 gameMode: 'cut_throat',
@@ -153,14 +152,15 @@
                 lastHit: null,
                 winner: null,
                 round: 1,
-                isBust: false
+                isBust: false,
+                pendingConfirmation: false // NUEVO: Estado para validación antitrampas
             });
 
-            // Estados Locales (No se sincronizan)
+            // Estados Locales (No se sincronizan, propios del dispositivo)
             const [isOnline, setIsOnline] = useState(false);
             const [roomId, setRoomId] = useState(null);
             const [localPlayerId, setLocalPlayerId] = useState(null); 
-            const [joinedViaUrl, setJoinedViaUrl] = useState(false); // Para saber si es cliente móvil
+            const [joinedViaUrl, setJoinedViaUrl] = useState(false); 
             const [tempNames, setTempNames] = useState(['', '']); 
             const [showExitConfirm, setShowExitConfirm] = useState(false);
             const [showQR, setShowQR] = useState(false);
@@ -215,14 +215,14 @@
                 return 'grid-cols-3 grid-rows-2'; 
             };
 
-            // URL Segura sin parámetros previos para el QR
             const generateSafeQRUrl = () => {
                 const baseUrl = window.location.href.split('?')[0];
                 return `${baseUrl}?room=${roomId}`;
             };
 
             // --- LÓGICA DEL JUEGO ---
-            const { appState, gameMode, numPlayers, players, activeTab, currentPlayerIdx, currentTurnThrows, lastHit, winner, round, isBust } = gameState;
+            // Extraemos todos los estados sincronizados
+            const { appState, gameMode, numPlayers, players, activeTab, currentPlayerIdx, currentTurnThrows, lastHit, winner, round, isBust, pendingConfirmation } = gameState;
 
             const handleCreateRoom = () => {
                 const id = Math.random().toString(36).substring(2, 6).toUpperCase();
@@ -257,7 +257,8 @@
                     round: 1,
                     isBust: false,
                     activeTab: 'board',
-                    appState: 'playing'
+                    pendingConfirmation: false,
+                    appState: isOnline ? 'setup_qr' : 'playing' // Si es online, muestra el QR antes de jugar
                 });
                 setShowExitConfirm(false);
             };
@@ -269,7 +270,7 @@
 
             const handleHit = (sector, multiplier) => {
                 if (!isActionAllowed()) return;
-                if (currentTurnThrows.length >= 3 || winner || isBust) return;
+                if (currentTurnThrows.length >= 3 || winner || isBust || pendingConfirmation) return;
                 
                 const isCricket = ['cut_throat', 'normal_cricket', 'no_score_cricket'].includes(gameMode);
                 if (isCricket && !CRICKET_NUMBERS.includes(sector)) {
@@ -325,7 +326,7 @@
 
             const handleMiss = () => {
                 if (!isActionAllowed()) return;
-                if (currentTurnThrows.length >= 3 || winner || isBust) return;
+                if (currentTurnThrows.length >= 3 || winner || isBust || pendingConfirmation) return;
                 const throwData = { sector: 0, multiplier: 0, points: 0, text: `Fallo (Fuera)` };
                 updateGame({
                     currentTurnThrows: [...currentTurnThrows, throwData],
@@ -335,7 +336,7 @@
 
             const undoThrow = () => {
                 if (!isActionAllowed()) return;
-                if (currentTurnThrows.length > 0 && !winner) {
+                if (currentTurnThrows.length > 0 && !winner && !pendingConfirmation) {
                     const newThrows = [...currentTurnThrows];
                     newThrows.pop();
                     updateGame({
@@ -343,6 +344,20 @@
                         lastHit: newThrows.length > 0 ? newThrows[newThrows.length - 1] : null,
                         isBust: false
                     });
+                }
+            };
+
+            // NUEVA FUNCIÓN ANTI-TRAMPAS (Móvil pide confirmación, Tablet confirma)
+            const requestTurnConfirmation = () => {
+                if (!isActionAllowed()) return;
+                if (currentTurnThrows.length < 3 && !isBust) return;
+
+                if (isOnline && joinedViaUrl) {
+                    // Si se pulsa desde un móvil, mandamos a validar a la tablet
+                    updateGame({ pendingConfirmation: true });
+                } else {
+                    // Si se pulsa desde la tablet, se termina el turno directamente sin preguntar
+                    endTurn(); 
                 }
             };
 
@@ -368,7 +383,7 @@
             };
 
             const endTurn = () => {
-                if (!isActionAllowed()) return;
+                // Al ejecutar endTurn definitivamente, quitamos la pantalla de confirmación
                 if (currentTurnThrows.length < 3 && !isBust) return;
 
                 let updatedPlayers = players.map(p => ({ ...p, marks: { ...p.marks } }));
@@ -452,6 +467,7 @@
                     currentTurnThrows: [],
                     lastHit: null,
                     isBust: false,
+                    pendingConfirmation: false,
                     winner: possibleWinner || winner,
                     currentPlayerIdx: nextPlayerIdx,
                     round: nextRound,
@@ -467,7 +483,7 @@
 
             // --- VISTAS ---
 
-            if (!fbLoaded) return <div className="h-screen w-full flex items-center justify-center bg-slate-950 text-cyan-400 font-bold tracking-widest uppercase">Inicializando Sistema AVS 2.4...</div>;
+            if (!fbLoaded) return <div className="h-screen w-full flex items-center justify-center bg-slate-950 text-cyan-400 font-bold tracking-widest uppercase">Inicializando Sistema AVS 2.5...</div>;
 
             const renderHome = () => (
                 <div className="flex-1 flex flex-col items-center justify-center p-4 relative z-10">
@@ -523,7 +539,7 @@
 
                             <div>
                                 <label className="block text-cyan-400 text-sm font-bold mb-1 uppercase flex items-center gap-2"><IconUsers size={16}/> Jugadores</label>
-                                <select value={numPlayers} onChange={(e) => { setNumPlayers(Number(e.target.value)); updateGame({numPlayers: Number(e.target.value)}); }} className="w-full bg-slate-950/80 border-2 border-slate-700/50 text-white p-3 rounded-xl text-lg font-bold text-center cursor-pointer focus:border-cyan-500 focus:outline-none backdrop-blur-sm">
+                                <select value={numPlayers} onChange={(e) => updateGame({numPlayers: Number(e.target.value)})} className="w-full bg-slate-950/80 border-2 border-slate-700/50 text-white p-3 rounded-xl text-lg font-bold text-center cursor-pointer focus:border-cyan-500 focus:outline-none backdrop-blur-sm">
                                     {[1, 2, 3, 4, 5, 6].map(n => <option key={n} value={n}>{n} {n === 1 ? 'Jugador' : 'Jugadores'}</option>)}
                                 </select>
                             </div>
@@ -566,7 +582,7 @@
                                     onClick={initPlayers} 
                                     disabled={!isNamesValid}
                                     className={`flex-[2] py-4 rounded-xl flex items-center justify-center gap-2 text-lg uppercase transition-all ${isNamesValid ? 'bg-gradient-to-r from-fuchsia-600 to-purple-600 hover:from-fuchsia-500 hover:to-purple-500 text-white font-black active:scale-95 shadow-[0_0_20px_rgba(236,72,153,0.4)]' : 'bg-slate-800/80 text-slate-500 font-bold cursor-not-allowed border border-slate-700/50'}`}>
-                                    <IconPlay size={20} /> Iniciar Partida
+                                    {isOnline ? <><IconQrCode size={20} /> Generar QR Sala</> : <><IconPlay size={20} /> Iniciar Partida</>}
                                 </button>
                             </div>
                         </div>
@@ -574,7 +590,21 @@
                 );
             };
 
-            // NUEVA PANTALLA DE SELECCIÓN DE JUGADOR PARA EL MÓVIL
+            // NUEVA PANTALLA EXCLUSIVA DE QR (Tablet)
+            const renderSetupQR = () => (
+                <div className="flex-1 flex flex-col items-center justify-center p-4 relative min-h-0 z-10">
+                    <div className="z-10 w-full max-w-lg bg-slate-900/90 backdrop-blur-xl p-8 rounded-3xl border border-cyan-500/30 shadow-[0_0_50px_rgba(6,182,212,0.2)] flex flex-col text-center">
+                        <h2 className="text-3xl md:text-4xl font-black text-white mb-2">SALA: <span className="text-fuchsia-400">{roomId}</span></h2>
+                        <p className="text-slate-300 mb-6 font-bold text-center">Escanea este código con cualquier móvil para conectarse a la partida como mando a distancia.</p>
+                        <img src={`https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(generateSafeQRUrl())}`} alt="QR Sala" className="rounded-xl border-4 border-white w-full max-w-[250px] aspect-square shadow-[0_0_20px_rgba(255,255,255,0.2)] mb-8 mx-auto" />
+                        <button onClick={() => updateGame({ appState: 'playing' })} className="w-full bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white font-black py-4 px-6 rounded-xl flex items-center justify-center gap-3 text-xl uppercase active:scale-95 transition-all shadow-[0_0_20px_rgba(6,182,212,0.4)]">
+                            <IconPlay size={24} /> Empezar Partida
+                        </button>
+                    </div>
+                </div>
+            );
+
+            // PANTALLA DE SELECCIÓN DE JUGADOR PARA EL MÓVIL
             const renderMobilePlayerSelect = () => {
                 if (appState !== 'playing') {
                     return (
@@ -653,17 +683,61 @@
                 return (
                     <div className="flex-1 flex flex-col min-h-0 w-full relative z-10">
                         
-                        {/* Bloqueo visual si es un móvil y NO es su turno */}
-                        {joinedViaUrl && localPlayerId !== null && localPlayerId !== currentPlayerIdx && activeTab === 'board' && (
-                            <div className="absolute inset-0 z-30 bg-slate-950/80 backdrop-blur-[4px] flex items-center justify-center mt-20 md:mt-24 rounded-3xl m-2 md:m-4">
-                                <div className="bg-slate-900 border-2 border-cyan-500/50 p-8 rounded-3xl shadow-[0_0_50px_rgba(6,182,212,0.4)] text-center animate-pulse max-w-sm">
-                                    <IconTarget size={60} className="text-cyan-400 mx-auto mb-4" />
-                                    <h3 className="text-3xl font-black text-white mb-2">NO ES TU TURNO</h3>
-                                    <p className="text-cyan-400 font-bold text-xl">Esperando a {players[currentPlayerIdx]?.name}...</p>
+                        {/* Bloqueo visual si es un móvil y NO es su turno, o si está validando tirada */}
+                        {joinedViaUrl && (
+                            (localPlayerId !== null && localPlayerId !== currentPlayerIdx && activeTab === 'board' && (
+                                <div className="absolute inset-0 z-30 bg-slate-950/80 backdrop-blur-[4px] flex items-center justify-center mt-20 md:mt-24 rounded-3xl m-2 md:m-4">
+                                    <div className="bg-slate-900 border-2 border-cyan-500/50 p-8 rounded-3xl shadow-[0_0_50px_rgba(6,182,212,0.4)] text-center animate-pulse max-w-sm">
+                                        <IconTarget size={60} className="text-cyan-400 mx-auto mb-4" />
+                                        <h3 className="text-3xl font-black text-white mb-2">NO ES TU TURNO</h3>
+                                        <p className="text-cyan-400 font-bold text-xl">Esperando a {players[currentPlayerIdx]?.name}...</p>
+                                    </div>
+                                </div>
+                            )) || 
+                            (pendingConfirmation && (
+                                <div className="absolute inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
+                                    <div className="bg-slate-900 border border-slate-700 p-8 rounded-3xl max-w-sm w-full text-center shadow-2xl flex flex-col animate-pulse">
+                                        <IconTarget size={60} className="text-cyan-400 mx-auto mb-4" />
+                                        <h3 className="text-2xl font-black text-white mb-2 uppercase">Validando Tirada</h3>
+                                        <p className="text-slate-400 font-bold">Confirma tu tirada en la Tablet del organizador...</p>
+                                    </div>
+                                </div>
+                            ))
+                        )}
+
+                        {/* OVERLAY DE CONFIRMACIÓN ANTI-TRAMPAS (Solo sale en la Tablet Host) */}
+                        {pendingConfirmation && !joinedViaUrl && (
+                            <div className="absolute inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
+                                <div className="bg-slate-900 border-2 border-cyan-500 p-6 md:p-8 rounded-3xl max-w-2xl w-full text-center shadow-[0_0_50px_rgba(6,182,212,0.5)] flex flex-col">
+                                    <IconTarget size={60} className="text-cyan-400 mx-auto mb-4 drop-shadow-[0_0_15px_rgba(6,182,212,0.8)]" />
+                                    <h3 className="text-3xl md:text-4xl font-black text-white mb-2 uppercase">Confirmar Tirada</h3>
+                                    <p className="text-cyan-400 font-bold text-xl md:text-2xl mb-8">De: {currentPlayer.name}</p>
+
+                                    <div className="flex gap-2 md:gap-4 justify-center mb-10">
+                                        {[0, 1, 2].map(i => {
+                                            const t = currentTurnThrows[i];
+                                            return (
+                                                <div key={i} className={`flex-1 max-w-[120px] aspect-square rounded-2xl flex flex-col items-center justify-center border-4 ${t ? 'bg-fuchsia-500/20 border-fuchsia-500 shadow-[0_0_15px_rgba(236,72,153,0.5)]' : 'bg-slate-800 border-slate-700'}`}>
+                                                    <span className="text-xs text-slate-400 font-bold mb-1 uppercase tracking-widest">Dardo {i+1}</span>
+                                                    <span className="text-2xl md:text-3xl font-black text-white">{t ? t.text : '-'}</span>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+
+                                    <div className="flex gap-4 shrink-0">
+                                        <button onClick={() => updateGame({ pendingConfirmation: false })} className="flex-1 py-4 rounded-xl bg-red-900/40 text-red-400 hover:bg-red-600 hover:text-white border border-red-900/50 font-black text-sm md:text-xl transition-colors">
+                                            Rechazar (Trampa)
+                                        </button>
+                                        <button onClick={() => { updateGame({ pendingConfirmation: false }); endTurn(); }} className="flex-[2] py-4 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white font-black text-sm md:text-xl transition-all shadow-[0_0_20px_rgba(6,182,212,0.4)]">
+                                            Confirmar Tirada
+                                        </button>
+                                    </div>
                                 </div>
                             </div>
                         )}
 
+                        {/* OVERLAY SALIR */}
                         {showExitConfirm && (
                             <div className="absolute inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
                                 <div className="bg-slate-900 border border-slate-700 p-8 rounded-3xl max-w-sm w-full text-center shadow-2xl flex flex-col">
@@ -677,6 +751,7 @@
                             </div>
                         )}
 
+                        {/* OVERLAY VICTORIA */}
                         {winner && (
                             <div className="absolute inset-0 z-40 bg-black/90 backdrop-blur-xl flex flex-col items-center justify-center p-4">
                                 <IconTrophy size={100} className="text-yellow-400 drop-shadow-[0_0_40px_rgba(250,204,21,0.8)] mb-4 animate-bounce shrink-0" />
@@ -691,7 +766,7 @@
                                 )}
                                 {!joinedViaUrl && (
                                     <div className="flex gap-4 shrink-0 mt-auto">
-                                        <button onClick={initPlayers} className="bg-slate-800 hover:bg-slate-700 text-white font-bold py-4 px-8 rounded-xl transition-colors text-xl">Revancha</button>
+                                        <button onClick={() => { setTempNames(players.map(p => p.name)); initPlayers(); }} className="bg-slate-800 hover:bg-slate-700 text-white font-bold py-4 px-8 rounded-xl transition-colors text-xl">Revancha</button>
                                         <button onClick={resetGame} className="bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white font-black py-4 px-8 rounded-xl shadow-[0_0_20px_rgba(6,182,212,0.4)] transition-transform active:scale-95 text-xl">Menú Principal</button>
                                     </div>
                                 )}
@@ -774,17 +849,17 @@
                                                                 : lastHit ? <span className="text-lg md:text-xl font-black text-white text-center leading-none drop-shadow-md">{lastHit.text}</span>
                                                                           : <span className="text-slate-400 font-bold text-xs">Toca la diana</span>}
                                                     </div>
-                                                    <button onClick={handleMiss} disabled={!isActionAllowed() || isTurnComplete || winner} className="flex-1 rounded-xl bg-red-900/40 text-red-400 border border-red-900/50 font-bold text-xs md:text-sm flex items-center justify-center disabled:opacity-30 active:bg-red-900/60 h-full backdrop-blur-sm">
+                                                    <button onClick={handleMiss} disabled={!isActionAllowed() || isTurnComplete || winner || pendingConfirmation} className="flex-1 rounded-xl bg-red-900/40 text-red-400 border border-red-900/50 font-bold text-xs md:text-sm flex items-center justify-center disabled:opacity-30 active:bg-red-900/60 h-full backdrop-blur-sm">
                                                         Fallo
                                                     </button>
                                                 </div>
                                                 <div className="flex gap-2 h-12 md:h-16">
-                                                    <button onClick={undoThrow} disabled={!isActionAllowed() || currentTurnThrows.length === 0 || winner} className="flex-1 rounded-xl bg-slate-800/60 text-slate-200 font-bold text-xs md:text-sm flex flex-col md:flex-row gap-1 items-center justify-center disabled:opacity-30 active:bg-slate-700/80 h-full backdrop-blur-sm border border-slate-600/30">
+                                                    <button onClick={undoThrow} disabled={!isActionAllowed() || currentTurnThrows.length === 0 || winner || pendingConfirmation} className="flex-1 rounded-xl bg-slate-800/60 text-slate-200 font-bold text-xs md:text-sm flex flex-col md:flex-row gap-1 items-center justify-center disabled:opacity-30 active:bg-slate-700/80 h-full backdrop-blur-sm border border-slate-600/30">
                                                         <IconUndo size={16} /> <span>Deshacer</span>
                                                     </button>
                                                     
-                                                    {/* BOTÓN ENVIAR TURNO */}
-                                                    <button onClick={endTurn} disabled={!isActionAllowed() || !isTurnComplete || winner} className={`flex-[2] rounded-xl font-black text-sm md:text-lg flex items-center justify-center gap-2 transition-all h-full ${isTurnComplete && !winner ? 'bg-gradient-to-r from-cyan-500 to-blue-600 text-white animate-pulse shadow-[0_0_15px_rgba(6,182,212,0.5)]' : 'bg-slate-800/50 text-slate-500 opacity-50 border border-slate-700/50'}`}>
+                                                    {/* BOTÓN ENVIAR TURNO (CON ANTI-TRAMPAS) */}
+                                                    <button onClick={requestTurnConfirmation} disabled={!isActionAllowed() || (!isTurnComplete && !winner) || pendingConfirmation} className={`flex-[2] rounded-xl font-black text-sm md:text-lg flex items-center justify-center gap-2 transition-all h-full ${isTurnComplete && !winner ? 'bg-gradient-to-r from-cyan-500 to-blue-600 text-white animate-pulse shadow-[0_0_15px_rgba(6,182,212,0.5)]' : 'bg-slate-800/50 text-slate-500 opacity-50 border border-slate-700/50'}`}>
                                                         ENVIAR TURNO <IconArrowRight size={18} />
                                                     </button>
                                                 </div>
@@ -903,14 +978,13 @@
                 <div className="w-full h-full flex flex-col text-white selection:bg-cyan-500 selection:text-white overflow-hidden relative bg-cover bg-center" style={{ backgroundImage: "url('https://images.unsplash.com/photo-1511512578047-dfb367046420?q=80&w=2071&auto=format&fit=crop')" }}>
                     <div className="absolute inset-0 bg-slate-950/70 z-0"></div>
                     
-                    {isOnline && roomId && !joinedViaUrl && (
+                    {isOnline && roomId && !joinedViaUrl && appState !== 'setup_qr' && (
                         <div className="absolute top-2 right-4 z-50 flex items-center gap-2">
                             <span className="bg-fuchsia-600 px-3 py-1 rounded-full text-xs font-black tracking-widest shadow-lg">ONLINE: {roomId}</span>
                             <button onClick={() => setShowQR(true)} className="bg-cyan-500 hover:bg-cyan-400 text-slate-900 p-1.5 rounded-full transition-colors"><IconQrCode size={16}/></button>
                         </div>
                     )}
 
-                    {/* Modal QR Único */}
                     {showQR && isOnline && roomId && !joinedViaUrl && (
                         <div className="absolute inset-0 z-50 bg-black/90 backdrop-blur-sm flex flex-col items-center justify-center p-4">
                             <div className="w-full max-w-lg flex flex-col items-center bg-slate-900 border border-slate-700 p-8 rounded-3xl shadow-2xl">
@@ -930,12 +1004,13 @@
                             {appState === 'home' && renderHome()}
                             {appState === 'setup_config' && renderConfig()}
                             {appState === 'setup_names' && renderNames()}
+                            {appState === 'setup_qr' && renderSetupQR()}
                             {appState === 'playing' && renderGame()}
                         </>
                     )}
                     
                     <div className="absolute bottom-1 md:bottom-2 right-2 md:right-4 text-cyan-300/60 font-mono text-[10px] md:text-xs font-bold tracking-widest z-50 pointer-events-none drop-shadow-md">
-                        AVS 2.4 (QR Centralizado)
+                        AVS 2.5 (Anti-Cheat)
                     </div>
                 </div>
             );

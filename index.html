@@ -4,6 +4,78 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Manito's Darts</title>
+
+    <!-- Web App Meta Tags para iOS -->
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Darts">
+    
+    <script>
+        // Generador automático de Icono PNG Nativo para iPhone (Apple Touch Icon)
+        // Se ejecuta instantáneamente para que iOS detecte el icono de la diana sin necesitar archivos externos.
+        (function() {
+            const canvas = document.createElement('canvas');
+            canvas.width = 192;
+            canvas.height = 192;
+            const ctx = canvas.getContext('2d');
+            
+            // Fondo oscuro del icono
+            ctx.fillStyle = '#020617';
+            ctx.fillRect(0, 0, 192, 192);
+            
+            // Base oscura de la diana
+            ctx.beginPath();
+            ctx.arc(96, 96, 80, 0, 2 * Math.PI);
+            ctx.fillStyle = '#0f172a';
+            ctx.fill();
+            
+            // Dibuja aros intercalados Fucsia y Cyan
+            function drawRing(r, width, color1, color2) {
+                ctx.lineWidth = width;
+                const segments = 10;
+                const angle = (2 * Math.PI) / segments;
+                for(let i=0; i<segments; i++) {
+                    ctx.beginPath();
+                    ctx.arc(96, 96, r, i*angle - (angle/2), (i+1)*angle - (angle/2));
+                    ctx.strokeStyle = i % 2 === 0 ? color1 : color2;
+                    ctx.stroke();
+                }
+            }
+            
+            // Líneas negras divisorias de los números
+            ctx.lineWidth = 1.5;
+            ctx.strokeStyle = '#020617';
+            const segments = 10;
+            const angle = (2 * Math.PI) / segments;
+            for(let i=0; i<segments; i++) {
+                ctx.beginPath();
+                ctx.moveTo(96, 96);
+                ctx.lineTo(96 + 80 * Math.cos(i*angle - (angle/2)), 96 + 80 * Math.sin(i*angle - (angle/2)));
+                ctx.stroke();
+            }
+            
+            // Dibuja Anillo de Dobles y Triples
+            drawRing(76, 8, '#06b6d4', '#ec4899');
+            drawRing(40, 8, '#06b6d4', '#ec4899');
+            
+            // Dibuja el Centro (Bull)
+            ctx.beginPath(); ctx.arc(96, 96, 14, 0, 2*Math.PI); ctx.fillStyle = '#06b6d4'; ctx.fill();
+            ctx.beginPath(); ctx.arc(96, 96, 7, 0, 2*Math.PI); ctx.fillStyle = '#ec4899'; ctx.fill();
+            
+            // Genera la imagen en Base64
+            const dataUrl = canvas.toDataURL('image/png');
+            
+            // Lo inyecta como icono general
+            const linkIcon = document.createElement('link');
+            linkIcon.rel = 'icon'; linkIcon.type = 'image/png'; linkIcon.href = dataUrl;
+            document.head.appendChild(linkIcon);
+            
+            // Lo inyecta como Apple Touch Icon (El que lee el iPhone)
+            const linkApple = document.createElement('link');
+            linkApple.rel = 'apple-touch-icon'; linkApple.href = dataUrl;
+            document.head.appendChild(linkApple);
+        })();
+    </script>
     
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>

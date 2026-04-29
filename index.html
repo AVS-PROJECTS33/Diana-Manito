@@ -312,7 +312,7 @@
 
             // --- CARGAR RANKINGS ---
             useEffect(() => {
-                if (!firebaseDb) return;
+                if (!firebaseDb || !user) return;
                 const canvasAppId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
                 const rankingsRef = typeof __firebase_config !== 'undefined'
                     ? window.fb.collection(firebaseDb, 'artifacts', canvasAppId, 'public', 'data', 'rankings')
@@ -325,11 +325,11 @@
                 }, (err) => console.error("Error cargando rankings:", err));
 
                 return () => unsub();
-            }, [firebaseDb]);
+            }, [firebaseDb, user]);
 
             // --- GUARDAR ESTADÍSTICAS GLOBALES ---
             const saveStatsToFirebase = async (gamePlayers, mode, winPlayer) => {
-                if (!firebaseDb || mode === 'perdiz') return; // Excluido del ranking
+                if (!firebaseDb || !user || mode === 'perdiz') return; // Excluido del ranking
                 const canvasAppId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
                 const isCricketMode = ['cut_throat', 'normal_cricket', 'no_score_cricket'].includes(mode);
 

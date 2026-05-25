@@ -147,6 +147,7 @@
         const IconPower = ({ size = 24, className = "" }) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M18.36 6.64a9 9 0 1 1-12.73 0"/><line x1="12" y1="2" x2="12" y2="12"/></svg>;
         const IconQrCode = ({ size = 24, className = "" }) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><rect x="3" y="3" width="6" height="6" rx="1"/><rect x="15" y="3" width="6" height="6" rx="1"/><rect x="3" y="15" width="6" height="6" rx="1"/><path d="M21 15v6"/><path d="M15 21h6"/><path d="M15 15h6"/><path d="M7 7h2"/><path d="M19 7h2"/><path d="M7 19h2"/></svg>;
         const IconTrash = ({ size = 24, className = "" }) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>;
+        const IconMic = ({ size = 24, className = "" }) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="22"/></svg>;
 
         // --- MATEMÁTICAS DIANA ---
         const polarToCartesian = (cx, cy, r, angleInDegrees) => {
@@ -330,6 +331,9 @@
                 try { return JSON.parse(localStorage.getItem('manitos_saved_names')) || []; } catch (e) { return []; }
             });
             const [activeNameInput, setActiveNameInput] = useState(null);
+            
+            const [isListening, setIsListening] = useState(false);
+            const recognitionRef = useRef(null);
 
             // --- SINCRONIZACIÓN CON FIREBASE ---
             useEffect(() => {
@@ -542,6 +546,7 @@
                 if (multiplier === 2) colorClass = 'text-fuchsia-400 border-fuchsia-500/50 shadow-[0_0_15px_rgba(236,72,153,0.4)]'; 
                 if (multiplier === 3) colorClass = 'text-yellow-400 border-yellow-500/50 shadow-[0_0_15px_rgba(234,179,8,0.4)]'; 
                 if (text === 'Fallo (Fuera)') colorClass = 'text-red-400 border-red-500/50 shadow-[0_0_15px_rgba(239,68,68,0.4)]';
+                if (text.includes('No entiendo')) colorClass = 'text-amber-400 border-amber-500/50 shadow-[0_0_15px_rgba(245,158,11,0.4)]';
 
                 setShowTargetToast({ text, colorClass, id: Date.now() });
 
@@ -553,6 +558,95 @@
                     setShowTargetToast(null);
                 }, 1800);
             };
+            
+            // --- RECONOCIMIENTO DE VOZ CONTINUO ---
+            const processVoiceCommandRef = useRef(null);
+
+            // Mantiene siempre acceso a las últimas funciones de la partida sin perder contexto
+            useEffect(() => {
+                processVoiceCommandRef.current = (transcript) => {
+                    let text = transcript.toLowerCase().trim();
+                    let sector = null;
+                    let mult = 1;
+
+                    if (text.includes("fall") || text.includes("fuer") || text.includes("cero") || text.includes("nada")) {
+                        handleMiss(); return;
+                    }
+                    if (text.includes("doble bull") || text.includes("doble centro") || text.includes("cincuenta") || text.includes("50")) {
+                        handleHit(25, 2); return;
+                    }
+                    if (text.includes("bull") || text.includes("centro") || text.includes("veinticinco") || text.includes("25") || text.includes("diana")) {
+                        handleHit(25, 1); return;
+                    }
+
+                    if (text.includes("doble")) mult = 2;
+                    else if (text.includes("triple")) mult = 3;
+
+                    const numbersMap = {"uno":1,"dos":2,"tres":3,"cuatro":4,"cinco":5,"seis":6,"siete":7,"ocho":8,"nueve":9,"diez":10,"once":11,"doce":12,"trece":13,"catorce":14,"quince":15,"dieciséis":16,"diecisiete":17,"dieciocho":18,"diecinueve":19,"veinte":20};
+                    const match = text.match(/\d+/);
+                    if (match) {
+                        const num = parseInt(match[0]);
+                        if (num >= 1 && num <= 20) sector = num;
+                    } else {
+                        for (const [word, val] of Object.entries(numbersMap)) {
+                            if (text.includes(word)) { sector = val; break; }
+                        }
+                    }
+
+                    if (sector !== null) handleHit(sector, mult);
+                    else showToast(`No entiendo: "${transcript}"`, 0);
+                };
+            });
+
+            // Auto-stop del micrófono cuando el turno termina
+            const toggleListening = () => {
+                if (isListening) {
+                    recognitionRef.current?.stop();
+                    setIsListening(false);
+                    return;
+                }
+
+                const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+                if (!SpeechRecognition) {
+                    alert("Tu navegador no soporta el reconocimiento de voz (Usa Chrome o Edge actualizados).");
+                    return;
+                }
+
+                try {
+                    const recognition = new SpeechRecognition();
+                    recognition.lang = 'es-ES';
+                    recognition.continuous = true;
+                    recognition.interimResults = false;
+
+                    recognition.onresult = (event) => {
+                        for (let i = event.resultIndex; i < event.results.length; ++i) {
+                            if (event.results[i].isFinal) {
+                                const transcript = event.results[i][0].transcript;
+                                if (processVoiceCommandRef.current) {
+                                    processVoiceCommandRef.current(transcript);
+                                }
+                            }
+                        }
+                    };
+
+                    recognition.onend = () => setIsListening(false);
+                    recognition.onerror = () => setIsListening(false);
+
+                    recognition.start();
+                    setIsListening(true);
+                    recognitionRef.current = recognition;
+                } catch (e) {
+                    console.error("Fallo micro:", e);
+                    setIsListening(false);
+                }
+            };
+
+            useEffect(() => {
+                if (isListening && (currentTurnThrows.length >= 3 || isBust || winner || pendingConfirmation)) {
+                    recognitionRef.current?.stop();
+                    setIsListening(false);
+                }
+            }, [currentTurnThrows.length, isBust, winner, pendingConfirmation, isListening]);
 
             const handleHit = (sector, multiplier) => {
                 if (!isActionAllowed()) return false;
@@ -1554,9 +1648,9 @@
 
                                         {/* TOAST INDICADOR DE IMPACTO EN LA ESQUINA SUPERIOR DERECHA DE LA DIANA */}
                                         {showTargetToast && (
-                                            <div key={showTargetToast.id} className={`absolute top-4 right-4 z-20 bg-slate-950/90 border-2 ${showTargetToast.colorClass} rounded-2xl px-6 py-4 flex flex-col items-center justify-center animate-toast backdrop-blur-sm pointer-events-none`}>
-                                                <span className="text-[10px] md:text-xs text-slate-300 font-bold uppercase tracking-widest mb-1">Has marcado</span>
-                                                <span className="text-2xl md:text-4xl font-black leading-none">{showTargetToast.text}</span>
+                                            <div key={showTargetToast.id} className={`absolute top-4 right-4 z-20 bg-slate-950/90 border-2 ${showTargetToast.colorClass} rounded-2xl px-4 py-3 md:px-6 md:py-4 flex flex-col items-center justify-center animate-toast backdrop-blur-sm pointer-events-none max-w-[200px] md:max-w-[300px]`}>
+                                                <span className="text-[10px] md:text-xs text-slate-300 font-bold uppercase tracking-widest mb-1 text-center">{showTargetToast.text.includes('No entiendo') ? 'Error de Voz' : 'Has marcado'}</span>
+                                                <span className={`font-black leading-none text-center truncate w-full ${showTargetToast.text.includes('No entiendo') ? 'text-base md:text-xl' : 'text-2xl md:text-4xl'}`}>{showTargetToast.text}</span>
                                             </div>
                                         )}
 
@@ -1752,6 +1846,10 @@
                                                     
                                                     <button onClick={requestTurnConfirmation} disabled={!isActionAllowed() || (!isTurnComplete && !winner) || pendingConfirmation} className={`flex-[2] rounded-lg md:rounded-xl font-black text-[10px] md:text-lg flex items-center justify-center gap-1 md:gap-2 transition-all h-full ${isTurnComplete && !winner ? 'bg-gradient-to-r from-cyan-500 to-blue-600 text-white animate-pulse shadow-[0_0_15px_rgba(6,182,212,0.5)]' : 'bg-slate-800/50 text-slate-500 opacity-50 border border-slate-700/50'}`}>
                                                         ENVIAR TURNO <IconArrowRight size={14} />
+                                                    </button>
+
+                                                    <button onClick={toggleListening} disabled={!isActionAllowed() || isTurnComplete || winner || pendingConfirmation} className={`flex-1 rounded-lg md:rounded-xl font-black text-[9px] md:text-sm flex flex-col md:flex-row gap-1 items-center justify-center transition-all h-full backdrop-blur-sm border disabled:opacity-30 ${isListening ? 'bg-red-900/40 text-red-400 border-red-500/80 animate-pulse shadow-[0_0_15px_rgba(239,68,68,0.4)]' : 'bg-slate-800/60 text-fuchsia-400 border-fuchsia-500/50 hover:bg-slate-700/80 shadow-[0_0_15px_rgba(236,72,153,0.3)]'}`}>
+                                                        <IconMic size={14} /> <span className="hidden lg:inline">{isListening ? 'Escuchando' : 'Dictar'}</span>
                                                     </button>
                                                 </div>
                                             </div>

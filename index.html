@@ -304,6 +304,7 @@
                 turnInRound: 0,
                 lastTurnPlayerIdx: null,
                 lastTurnThrows: [],
+                lastTurnBust: false,
                 history: []
             });
 
@@ -523,6 +524,7 @@
                     turnInRound: 0,
                     lastTurnPlayerIdx: null,
                     lastTurnThrows: [],
+                    lastTurnBust: false,
                     history: [],
                     appState: isOnline ? 'setup_qr' : 'playing'
                 });
@@ -570,7 +572,7 @@
                 showToast(text, multiplier);
                 
                 let stolen = false;
-                if (gameMode === 'perdiz' && gameState.lastTurnPlayerIdx !== null && gameState.lastTurnPlayerIdx !== currentPlayerIdx) {
+                if (gameMode === 'perdiz' && gameState.lastTurnPlayerIdx !== null && gameState.lastTurnPlayerIdx !== currentPlayerIdx && !gameState.lastTurnBust) {
                     const prevThrows = gameState.lastTurnThrows || [];
                     if (sector !== 0 && prevThrows.some(t => t.sector === sector && t.multiplier === multiplier)) {
                         stolen = true;
@@ -652,6 +654,7 @@
                         turnInRound: lastState.turnInRound,
                         lastTurnPlayerIdx: lastState.lastTurnPlayerIdx,
                         lastTurnThrows: lastState.lastTurnThrows,
+                        lastTurnBust: lastState.lastTurnBust,
                         isNewRecord: lastState.isNewRecord,
                         recordStatsText: lastState.recordStatsText,
                         winner: lastState.winner,
@@ -710,6 +713,7 @@
                     turnInRound: gameState.turnInRound,
                     lastTurnPlayerIdx: gameState.lastTurnPlayerIdx,
                     lastTurnThrows: gameState.lastTurnThrows,
+                    lastTurnBust: gameState.lastTurnBust,
                     isNewRecord,
                     recordStatsText,
                     winner
@@ -893,8 +897,9 @@
                     currentPlayerIdx: nextPlayerIdx,
                     round: nextRound,
                     turnInRound: nextTurnInRound,
-                    lastTurnPlayerIdx: isBust ? null : currentPlayerIdx,
-                    lastTurnThrows: isBust ? [] : currentTurnThrows,
+                    lastTurnPlayerIdx: currentPlayerIdx,
+                    lastTurnThrows: [...currentTurnThrows],
+                    lastTurnBust: isBust,
                     history: newHistory,
                     activeTab: 'board'
                 });
@@ -1074,7 +1079,9 @@
             );
 
             const renderNames = () => {
-                const isNamesValid = tempNames.every(name => name.trim().length > 0);
+                const isNamesFilled = tempNames.every(name => name.trim().length > 0);
+                const uniqueNames = new Set(tempNames.map(n => n.trim().toUpperCase()));
+                const isNamesValid = isNamesFilled && uniqueNames.size === tempNames.length;
                 
                 return (
                     <div className="flex-1 flex flex-col items-center justify-center p-4 relative min-h-0 z-10">
@@ -1116,14 +1123,17 @@
                                 })}
                             </div>
                             
-                            <div className="flex gap-4 mt-6 shrink-0">
-                                <button onClick={() => updateGame({ appState: 'setup_config' })} className="flex-1 bg-slate-800/80 hover:bg-slate-700/80 backdrop-blur-sm text-white font-bold py-4 rounded-xl transition-all border border-slate-600/50">Atrás</button>
-                                <button 
-                                    onClick={initPlayers} 
-                                    disabled={!isNamesValid}
-                                    className={`flex-[2] py-4 rounded-xl flex items-center justify-center gap-2 text-lg uppercase transition-all ${isNamesValid ? 'bg-gradient-to-r from-fuchsia-600 to-purple-600 hover:from-fuchsia-500 hover:to-purple-500 text-white font-black active:scale-95 shadow-[0_0_20px_rgba(236,72,153,0.4)]' : 'bg-slate-800/80 text-slate-500 font-bold cursor-not-allowed border border-slate-700/50'}`}>
-                                    {isOnline ? <><IconQrCode size={20} /> Generar QR Sala</> : <><IconPlay size={20} /> Iniciar Partida</>}
-                                </button>
+                            <div className="flex flex-col gap-4 mt-6 shrink-0 w-full">
+                                {uniqueNames.size !== tempNames.length && <p className="text-red-400 text-sm font-bold text-center animate-pulse tracking-wide">Los nombres deben ser diferentes entre sí.</p>}
+                                <div className="flex gap-4 w-full">
+                                    <button onClick={() => updateGame({ appState: 'setup_config' })} className="flex-1 bg-slate-800/80 hover:bg-slate-700/80 backdrop-blur-sm text-white font-bold py-4 rounded-xl transition-all border border-slate-600/50">Atrás</button>
+                                    <button 
+                                        onClick={initPlayers} 
+                                        disabled={!isNamesValid}
+                                        className={`flex-[2] py-4 rounded-xl flex items-center justify-center gap-2 text-lg uppercase transition-all ${isNamesValid ? 'bg-gradient-to-r from-fuchsia-600 to-purple-600 hover:from-fuchsia-500 hover:to-purple-500 text-white font-black active:scale-95 shadow-[0_0_20px_rgba(236,72,153,0.4)]' : 'bg-slate-800/80 text-slate-500 font-bold cursor-not-allowed border border-slate-700/50'}`}>
+                                        {isOnline ? <><IconQrCode size={20} /> Generar QR Sala</> : <><IconPlay size={20} /> Iniciar Partida</>}
+                                    </button>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -1189,7 +1199,9 @@
             };
 
             const renderRematchConfig = () => {
-                const isNamesValid = tempNames.length > 0 && tempNames.every(name => name.trim().length > 0);
+                const isNamesFilled = tempNames.length > 0 && tempNames.every(name => name.trim().length > 0);
+                const uniqueNames = new Set(tempNames.map(n => n.trim().toUpperCase()));
+                const isNamesValid = isNamesFilled && uniqueNames.size === tempNames.length;
 
                 return (
                     <div className="flex-1 flex flex-col items-center justify-center p-4 relative min-h-0 z-10">
@@ -1276,14 +1288,17 @@
                                 </div>
                             </div>
 
-                            <div className="flex gap-3 mt-4 shrink-0 border-t border-slate-700/50 pt-4">
-                                <button onClick={resetGame} className="flex-1 bg-slate-800/80 hover:bg-slate-700/80 text-white font-bold py-3 md:py-4 rounded-xl transition-all border border-slate-600/50">Salir</button>
-                                <button 
-                                    onClick={initPlayers} 
-                                    disabled={!isNamesValid || tempNames.length < 1}
-                                    className={`flex-[2] py-3 md:py-4 rounded-xl flex items-center justify-center gap-2 text-base md:text-lg uppercase transition-all ${isNamesValid && tempNames.length > 0 ? 'bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white font-black active:scale-95 shadow-[0_0_20px_rgba(6,182,212,0.4)]' : 'bg-slate-800/80 text-slate-500 font-bold cursor-not-allowed border border-slate-700/50'}`}>
-                                    ¡A Jugar! <IconPlay size={20} />
-                                </button>
+                            <div className="flex flex-col gap-3 mt-4 shrink-0 border-t border-slate-700/50 pt-4">
+                                {uniqueNames.size !== tempNames.length && <p className="text-red-400 text-xs font-bold text-center animate-pulse tracking-wide">Los nombres deben ser diferentes entre sí.</p>}
+                                <div className="flex gap-3 w-full">
+                                    <button onClick={resetGame} className="flex-1 bg-slate-800/80 hover:bg-slate-700/80 text-white font-bold py-3 md:py-4 rounded-xl transition-all border border-slate-600/50">Salir</button>
+                                    <button 
+                                        onClick={initPlayers} 
+                                        disabled={!isNamesValid || tempNames.length < 1}
+                                        className={`flex-[2] py-3 md:py-4 rounded-xl flex items-center justify-center gap-2 text-base md:text-lg uppercase transition-all ${isNamesValid && tempNames.length > 0 ? 'bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white font-black active:scale-95 shadow-[0_0_20px_rgba(6,182,212,0.4)]' : 'bg-slate-800/80 text-slate-500 font-bold cursor-not-allowed border border-slate-700/50'}`}>
+                                        ¡A Jugar! <IconPlay size={20} />
+                                    </button>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -1679,10 +1694,10 @@
                                                     <h3 className="text-base md:text-3xl font-black text-cyan-400 truncate leading-tight drop-shadow-[0_0_10px_rgba(6,182,212,0.5)]">{currentPlayer.name}</h3>
                                                     <div className="flex flex-wrap items-center gap-1 md:gap-2 mt-0.5 md:mt-1">
                                                         <div className="inline-flex items-center gap-1 md:gap-1.5 bg-slate-950/50 px-2 py-0.5 rounded-md border border-slate-700/50 truncate max-w-full">
-                                                            <span className="text-[8px] md:text-[10px] text-slate-500 uppercase font-black tracking-widest shrink-0">Última tirada:</span>
+                                                            <span className="text-[8px] md:text-[10px] text-slate-500 uppercase font-black tracking-widest shrink-0">{gameState.lastTurnPlayerIdx !== null && players[gameState.lastTurnPlayerIdx] ? `Ant (${players[gameState.lastTurnPlayerIdx].name.substring(0, 3)}):` : 'Ant:'}</span>
                                                             <span className="text-[9px] md:text-xs text-slate-300 font-bold truncate">
-                                                                {currentPlayer.lastTurnThrows && currentPlayer.lastTurnThrows.length > 0 ? (
-                                                                    currentPlayer.lastTurnBust ? <span className="text-red-400 animate-pulse">BUST</span> : currentPlayer.lastTurnThrows.map(t => t.text).join(' · ')
+                                                                {gameState.lastTurnThrows && gameState.lastTurnThrows.length > 0 ? (
+                                                                    gameState.lastTurnBust ? <span className="text-red-400 animate-pulse">BUST</span> : gameState.lastTurnThrows.map(t => t.text).join(' · ')
                                                                 ) : (
                                                                     <span className="text-slate-600">-</span>
                                                                 )}

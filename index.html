@@ -334,6 +334,7 @@
             
             const [isListening, setIsListening] = useState(false);
             const recognitionRef = useRef(null);
+            const [selectedProfile, setSelectedProfile] = useState(null);
 
             // --- SINCRONIZACIÓN CON FIREBASE ---
             useEffect(() => {
@@ -393,6 +394,8 @@
                     let matchScore = 0;
                     if (isCricketMode) {
                         matchScore = (p.matchStats.marks / p.matchStats.darts) * 3;
+                    } else if (mode === 'high_score') {
+                        matchScore = p.score;
                     } else {
                         matchScore = p.matchStats.points / p.matchStats.darts;
                     }
@@ -412,7 +415,7 @@
                             if (data.stats[mode].darts > 0) {
                                 data.stats[mode].bestScore = isCricketMode 
                                     ? (data.stats[mode].marks / data.stats[mode].darts) * 3 
-                                    : (data.stats[mode].points / data.stats[mode].darts);
+                                    : (mode === 'high_score' ? data.stats[mode].points : (data.stats[mode].points / data.stats[mode].darts));
                             } else {
                                 data.stats[mode].bestScore = 0;
                             }
@@ -647,6 +650,12 @@
                     setIsListening(false);
                 }
             }, [currentTurnThrows.length, isBust, winner, pendingConfirmation, isListening]);
+
+            // Nombres combinados para el autocompletado (Historial Local + Base de datos Firebase)
+            const allKnownNames = [...new Set([
+                ...savedNames,
+                ...rankingsData.map(p => p.name.toUpperCase())
+            ])].sort();
 
             const handleHit = (sector, multiplier) => {
                 if (!isActionAllowed()) return false;
@@ -949,10 +958,12 @@
                 if (possibleWinner && !joinedViaUrl) {
                     const isX01 = ['301', '501', '701', '901'].includes(gameMode);
                     
-                    if (isCricketMode || isX01) {
+                    if (isCricketMode || isX01 || gameMode === 'high_score') {
                         let matchScore = 0;
                         const pStats = possibleWinner.matchStats;
-                        if (pStats.darts > 0) {
+                        if (gameMode === 'high_score') {
+                            matchScore = possibleWinner.score;
+                        } else if (pStats.darts > 0) {
                             matchScore = isCricketMode ? ((pStats.marks / pStats.darts) * 3) : (pStats.points / pStats.darts);
                         }
 
@@ -964,7 +975,7 @@
                                 if (s.bestScore !== undefined) {
                                     score = s.bestScore;
                                 } else if (s.darts > 0) {
-                                    score = isCricketMode ? ((s.marks / s.darts) * 3) : (s.points / s.darts);
+                                    score = isCricketMode ? ((s.marks / s.darts) * 3) : (gameMode === 'high_score' ? s.points : (s.points / s.darts));
                                 }
                                 if (score > globalBest) globalBest = score;
                             }
@@ -972,7 +983,7 @@
 
                         if (matchScore > globalBest && matchScore > 0) {
                             newIsRecord = true;
-                            newRecordText = matchScore.toFixed(2) + (isCricketMode ? ' MPR' : ' PPD');
+                            newRecordText = gameMode === 'high_score' ? Math.round(matchScore) + ' PTS' : matchScore.toFixed(2) + (isCricketMode ? ' MPR' : ' PPD');
                         }
                     }
 
@@ -1041,8 +1052,12 @@
                                 <IconQrCode size={24} /> CREAR SALA (Host)
                             </button>
                             
-                            <button onClick={() => updateGame({ appState: 'ranking' })} className="w-full bg-gradient-to-r from-yellow-600 to-amber-700 hover:from-yellow-500 hover:to-amber-600 border border-yellow-400/50 text-white font-black py-4 px-6 rounded-xl flex items-center justify-center gap-3 text-lg uppercase transition-all shadow-[0_0_20px_rgba(202,138,4,0.4)]">
+                            <button onClick={() => updateGame({ appState: 'ranking' })} className="w-full bg-gradient-to-r from-yellow-600 to-amber-700 hover:from-yellow-500 hover:to-amber-600 border border-yellow-400/50 text-white font-black py-4 px-6 rounded-xl flex items-center justify-center gap-3 text-lg uppercase transition-all shadow-[0_0_20px_rgba(202,138,4,0.4)] mb-2">
                                 <IconTrophy size={24} /> Ver Ranking Global
+                            </button>
+                            
+                            <button onClick={() => { updateGame({ appState: 'profiles' }); setSelectedProfile(null); }} className="w-full bg-slate-800 hover:bg-slate-700 border border-fuchsia-500/50 text-white font-black py-4 px-6 rounded-xl flex items-center justify-center gap-3 text-lg uppercase transition-all shadow-[0_0_15px_rgba(236,72,153,0.3)]">
+                                <IconUsers size={24} /> Perfiles Jugadores
                             </button>
                         </div>
                     </div>
@@ -1059,9 +1074,9 @@
                         if (s.bestScore !== undefined) {
                             score = s.bestScore;
                         } else if (s.darts > 0) { // Legacy
-                            score = metric === 'MPR' ? (s.marks / s.darts) * 3 : (s.points / s.darts);
+                            score = metric === 'MPR' ? (s.marks / s.darts) * 3 : (metric === 'PTS' ? s.points : (s.points / s.darts));
                         }
-                        let displayScore = score.toFixed(2) + " " + metric;
+                        let displayScore = mode === 'high_score' ? Math.round(score) + " " + metric : score.toFixed(2) + " " + metric;
                         return { name: p.name, score, displayScore, games: s.games, wins: s.wins };
                     });
 
@@ -1119,7 +1134,99 @@
                                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 gap-4 mb-4">
                                     {['301', '501', '701', '901'].map(m => renderModeCard(m, 'PPD'))}
                                 </div>
+                                
+                                <h3 className="text-2xl md:text-3xl font-black text-white mb-4 mt-8 tracking-wide flex items-center gap-2"><span className="w-2 h-8 bg-green-500 rounded-full"></span> ESPECIALES (Top Puntuación)</h3>
+                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-8">
+                                    {['high_score'].map(m => renderModeCard(m, 'PTS'))}
+                                </div>
                             </div>
+                        </div>
+                    </div>
+                );
+            };
+
+            const renderProfiles = () => {
+                const allProfiles = [...rankingsData].sort((a, b) => a.name.localeCompare(b.name));
+
+                return (
+                    <div className="flex-1 flex flex-col items-center p-4 relative z-10 w-full overflow-y-auto">
+                        <div className="z-10 w-full max-w-6xl bg-slate-900/90 backdrop-blur-xl p-4 md:p-8 rounded-3xl border border-fuchsia-500/30 shadow-[0_0_50px_rgba(236,72,153,0.2)] flex flex-col min-h-full">
+                            <div className="flex flex-col md:flex-row justify-between items-center mb-6 shrink-0 border-b border-slate-700 pb-4 gap-4">
+                                <h2 className="text-3xl md:text-5xl font-black text-transparent bg-clip-text bg-gradient-to-r from-fuchsia-400 to-purple-600 drop-shadow-md flex items-center gap-3 uppercase">
+                                    <IconUsers size={40} className="text-fuchsia-400 shrink-0" /> Perfiles
+                                </h2>
+                                <button onClick={() => { updateGame({ appState: 'home' }); setSelectedProfile(null); }} className="bg-slate-800 hover:bg-slate-700 text-white font-bold py-3 px-6 rounded-xl transition-colors border border-slate-600 flex items-center gap-2 w-full md:w-auto justify-center">
+                                    <IconUndo size={18} /> Volver al Menú
+                                </button>
+                            </div>
+
+                            {!selectedProfile ? (
+                                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                                    {allProfiles.length === 0 ? (
+                                        <p className="text-slate-500 col-span-full text-center italic text-lg py-8">No hay perfiles registrados en la base de datos.</p>
+                                    ) : (
+                                        allProfiles.map((p, i) => (
+                                            <button key={i} onClick={() => setSelectedProfile(p)} className="bg-slate-800/80 hover:bg-slate-700 border border-slate-600 rounded-2xl p-4 flex flex-col items-center gap-3 transition-transform active:scale-95 shadow-lg group">
+                                                <div className="w-16 h-16 bg-slate-950 rounded-full flex items-center justify-center border-2 border-slate-500 group-hover:border-fuchsia-500 transition-colors">
+                                                    <IconUser size={32} className="text-slate-400 group-hover:text-fuchsia-400 transition-colors" />
+                                                </div>
+                                                <span className="font-black text-white text-lg md:text-xl truncate w-full text-center uppercase">{p.name}</span>
+                                            </button>
+                                        ))
+                                    )}
+                                </div>
+                            ) : (
+                                <div className="flex flex-col flex-1">
+                                    <div className="flex items-center gap-4 mb-6 bg-slate-950/50 p-4 rounded-2xl border border-slate-700/50">
+                                        <div className="w-16 h-16 md:w-20 md:h-20 bg-slate-900 rounded-full flex items-center justify-center border-4 border-fuchsia-500 shadow-[0_0_20px_rgba(236,72,153,0.5)] shrink-0">
+                                            <IconUser size={32} className="text-fuchsia-400 md:scale-125" />
+                                        </div>
+                                        <div className="flex-1 min-w-0">
+                                            <h3 className="text-2xl md:text-4xl font-black text-white uppercase truncate">{selectedProfile.name}</h3>
+                                            <p className="text-fuchsia-400 font-bold tracking-widest text-xs md:text-sm uppercase">Estadísticas del Jugador</p>
+                                        </div>
+                                        <button onClick={() => setSelectedProfile(null)} className="bg-slate-800 hover:bg-slate-700 text-white font-bold p-3 md:px-6 md:py-3 rounded-xl transition-colors border border-slate-600 flex items-center gap-2">
+                                            <IconUndo size={20} /> <span className="hidden md:inline">Atrás</span>
+                                        </button>
+                                    </div>
+
+                                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                                        {Object.keys(GAME_MODES).map(mode => {
+                                            const stats = selectedProfile.stats?.[mode];
+                                            if (!stats || stats.games === 0) return null;
+                                            
+                                            const isCricket = ['cut_throat', 'normal_cricket', 'no_score_cricket'].includes(mode);
+                                            const metric = mode === 'high_score' ? 'PTS' : (isCricket ? 'MPR' : 'PPD');
+                                            let best = stats.bestScore !== undefined ? stats.bestScore : 0;
+                                            
+                                            if (!stats.bestScore && stats.darts > 0) {
+                                                best = isCricket ? (stats.marks / stats.darts) * 3 : (mode === 'high_score' ? stats.points : (stats.points / stats.darts));
+                                            }
+
+                                            return (
+                                                <div key={mode} className="bg-slate-800/50 border border-slate-600/50 rounded-2xl p-4 flex flex-col hover:bg-slate-800 transition-colors">
+                                                    <h4 className="text-cyan-400 font-black text-base md:text-lg mb-2 uppercase border-b border-slate-700/50 pb-2 truncate">{GAME_MODES[mode].name}</h4>
+                                                    <div className="flex justify-between items-end mt-2">
+                                                        <div className="flex flex-col gap-1">
+                                                            <span className="text-slate-400 text-[10px] md:text-xs font-bold uppercase tracking-wider">Partidas: <span className="text-white text-sm md:text-base">{stats.games}</span></span>
+                                                            <span className="text-slate-400 text-[10px] md:text-xs font-bold uppercase tracking-wider">Victorias: <span className="text-yellow-400 text-sm md:text-base">{stats.wins}</span></span>
+                                                        </div>
+                                                        <div className="flex flex-col items-end">
+                                                            <span className="text-[9px] md:text-[10px] text-fuchsia-400 font-bold uppercase tracking-widest leading-none mb-1 md:mb-1.5">Récord Personal</span>
+                                                            <span className="text-xl md:text-2xl font-black text-white leading-none">
+                                                                {mode === 'high_score' ? Math.round(best) : best.toFixed(2)} <span className="text-[10px] md:text-xs text-slate-400">{metric}</span>
+                                                            </span>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            );
+                                        })}
+                                        {(!selectedProfile.stats || Object.values(selectedProfile.stats).every(s => s.games === 0)) && (
+                                            <p className="text-slate-500 col-span-full italic text-center py-4">Este jugador no tiene estadísticas registradas que mostrar.</p>
+                                        )}
+                                    </div>
+                                </div>
+                            )}
                         </div>
                     </div>
                 );
@@ -1184,7 +1291,7 @@
                             
                             <div className={`grid gap-3 w-full flex-1 min-h-0 ${getDynamicGridClass(numPlayers)} content-center`}>
                                 {tempNames.map((name, i) => {
-                                    const suggestions = savedNames.filter(n => n.includes(name.toUpperCase()) && n !== name.toUpperCase());
+                                    const suggestions = allKnownNames.filter(n => n.includes(name.toUpperCase()) && n !== name.toUpperCase());
                                     return (
                                         <div key={i} className={`relative h-full ${activeNameInput === 'names_' + i ? 'z-50' : 'z-10'}`}>
                                             <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none"><IconUser size={20} className="text-slate-400" /></div>
@@ -1329,7 +1436,7 @@
                                     <label className="block text-cyan-400 text-sm font-bold mb-2 uppercase flex items-center gap-2"><IconUsers size={16}/> Jugadores ({tempNames.length})</label>
                                     <div className="flex flex-col gap-2">
                                         {tempNames.map((name, i) => {
-                                            const suggestions = savedNames.filter(n => n.includes(name.toUpperCase()) && n !== name.toUpperCase());
+                                            const suggestions = allKnownNames.filter(n => n.includes(name.toUpperCase()) && n !== name.toUpperCase());
                                             return (
                                                 <div key={i} className="flex items-center gap-2">
                                                     <div className={`relative flex-1 ${activeNameInput === 'rematch_' + i ? 'z-50' : 'z-10'}`}>
@@ -1991,11 +2098,12 @@
                             {appState === 'setup_rematch' && renderRematchConfig()}
                             {appState === 'playing' && renderGame()}
                             {appState === 'ranking' && renderRanking()}
+                            {appState === 'profiles' && renderProfiles()}
                         </>
                     )}
                     
                     <div className="absolute bottom-1 md:bottom-2 right-2 md:right-4 text-cyan-300/60 font-mono text-[10px] md:text-xs font-bold tracking-widest z-50 pointer-events-none drop-shadow-md">
-                        AVS 4.5
+                        AVS 5
                     </div>
                 </div>
             );

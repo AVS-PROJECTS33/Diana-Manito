@@ -339,16 +339,22 @@
             const [isEditingName, setIsEditingName] = useState(false);
             const [editingNameValue, setEditingNameValue] = useState("");
             const [showEditNameConfirm, setShowEditNameConfirm] = useState(false);
+            const [isAdminOnlyMode, setIsAdminOnlyMode] = useState(false);
+            const [isAdminRemote, setIsAdminRemote] = useState(false);
 
             // --- SINCRONIZACIÓN CON FIREBASE ---
             useEffect(() => {
                 const urlParams = new URLSearchParams(window.location.search);
                 const room = urlParams.get('room');
+                const admin = urlParams.get('admin');
                 
                 if (room && user) {
                     setIsOnline(true);
                     setRoomId(room.toUpperCase());
                     setJoinedViaUrl(true);
+                    if (admin === 'true') {
+                        setIsAdminRemote(true);
+                    }
                 }
             }, [user]);
 
@@ -554,13 +560,14 @@
                     lastTurnThrows: [],
                     lastTurnBust: false,
                     history: [],
-                    appState: isOnline ? 'setup_qr' : 'playing'
+                    appState: (isOnline && !isAdminOnlyMode) ? 'setup_qr' : 'playing'
                 });
                 setShowExitConfirm(false);
             };
 
             const isActionAllowed = () => {
                 if (!joinedViaUrl) return true; 
+                if (isAdminRemote) return true;
                 return localPlayerId === currentPlayerIdx; 
             };
 
@@ -1081,6 +1088,8 @@
                 setRoomId(null);
                 setShowTargetToast(null);
                 setShowUndoConfirm(false);
+                setIsAdminOnlyMode(false);
+                setIsAdminRemote(false);
             };
 
             const triggerFeedback = (svgProps) => {
@@ -1380,6 +1389,27 @@
                         <div className="z-10 w-full max-w-4xl bg-slate-900/80 backdrop-blur-xl p-6 rounded-3xl border border-fuchsia-500/30 shadow-[0_0_50px_rgba(236,72,153,0.2)] flex flex-col min-h-0">
                             <h2 className="text-3xl font-black text-center mb-6 text-fuchsia-400 shrink-0 drop-shadow-md">NOMBRES</h2>
                             
+                            {!isOnline && !isAdminOnlyMode && (
+                                <button onClick={() => {
+                                    const id = Math.random().toString(36).substring(2, 6).toUpperCase();
+                                    setRoomId(id);
+                                    setIsOnline(true);
+                                    setIsAdminOnlyMode(true);
+                                    updateGame({ appState: 'setup_names' });
+                                }} className="mb-6 mx-auto bg-slate-800 hover:bg-slate-700 text-cyan-400 border border-cyan-500/50 px-4 py-3 rounded-xl text-sm font-bold flex items-center justify-center gap-2 transition-all w-full max-w-[300px] shadow-[0_0_15px_rgba(6,182,212,0.2)]">
+                                    <IconQrCode size={18} /> Activar Mando Único (Admin)
+                                </button>
+                            )}
+                            {isAdminOnlyMode && roomId && (
+                                <div className="mb-6 mx-auto bg-slate-950/60 border border-cyan-500/50 p-4 rounded-2xl flex flex-col md:flex-row items-center justify-center gap-4 shadow-[0_0_15px_rgba(6,182,212,0.2)] w-full max-w-md">
+                                    <img src={`https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(generateSafeQRUrl() + '&admin=true')}`} alt="QR Admin" className="w-24 h-24 rounded-xl bg-white p-1 shrink-0" />
+                                    <div className="text-center md:text-left">
+                                        <h4 className="text-cyan-400 font-black uppercase text-sm md:text-base mb-1">Mando Admin Activado</h4>
+                                        <p className="text-slate-400 text-xs md:text-sm">Escanea este QR con un móvil para usarlo como mando único de la partida.</p>
+                                    </div>
+                                </div>
+                            )}
+
                             <div className={`grid gap-3 w-full flex-1 min-h-0 ${getDynamicGridClass(numPlayers)} content-center`}>
                                 {tempNames.map((name, i) => {
                                     const suggestions = allKnownNames.filter(n => n.includes(name.toUpperCase()) && n !== name.toUpperCase());
@@ -1418,12 +1448,19 @@
                             <div className="flex flex-col gap-4 mt-6 shrink-0 w-full">
                                 {uniqueNames.size !== tempNames.length && <p className="text-red-400 text-sm font-bold text-center animate-pulse tracking-wide">Los nombres deben ser diferentes entre sí.</p>}
                                 <div className="flex gap-4 w-full">
-                                    <button onClick={() => updateGame({ appState: 'setup_config' })} className="flex-1 bg-slate-800/80 hover:bg-slate-700/80 backdrop-blur-sm text-white font-bold py-4 rounded-xl transition-all border border-slate-600/50">Atrás</button>
+                                    <button onClick={() => {
+                                        updateGame({ appState: 'setup_config' });
+                                        if (isAdminOnlyMode) {
+                                            setIsOnline(false);
+                                            setRoomId(null);
+                                            setIsAdminOnlyMode(false);
+                                        }
+                                    }} className="flex-1 bg-slate-800/80 hover:bg-slate-700/80 backdrop-blur-sm text-white font-bold py-4 rounded-xl transition-all border border-slate-600/50">Atrás</button>
                                     <button 
                                         onClick={initPlayers} 
                                         disabled={!isNamesValid}
                                         className={`flex-[2] py-4 rounded-xl flex items-center justify-center gap-2 text-lg uppercase transition-all ${isNamesValid ? 'bg-gradient-to-r from-fuchsia-600 to-purple-600 hover:from-fuchsia-500 hover:to-purple-500 text-white font-black active:scale-95 shadow-[0_0_20px_rgba(236,72,153,0.4)]' : 'bg-slate-800/80 text-slate-500 font-bold cursor-not-allowed border border-slate-700/50'}`}>
-                                        {isOnline ? <><IconQrCode size={20} /> Generar QR Sala</> : <><IconPlay size={20} /> Iniciar Partida</>}
+                                        {isOnline && !isAdminOnlyMode ? <><IconQrCode size={20} /> Generar QR Sala</> : <><IconPlay size={20} /> Iniciar Partida</>}
                                     </button>
                                 </div>
                             </div>
@@ -1827,7 +1864,7 @@
                                 </button>
                             ) : (
                                 <div className="px-2 md:px-4 h-full rounded-xl font-black bg-cyan-900/30 text-cyan-400 border border-cyan-500/50 flex items-center justify-center shadow-inner truncate max-w-[100px] md:max-w-[120px] text-[10px] md:text-xs">
-                                    MANDO:<br/>{players[localPlayerId]?.name}
+                                    MANDO:<br/>{isAdminRemote ? 'ADMIN' : players[localPlayerId]?.name}
                                 </div>
                             )}
                         </div>
@@ -2179,7 +2216,7 @@
 
                     {/* RUTEO PRINCIPAL */}
                     {joinedViaUrl ? (
-                        localPlayerId === null ? renderMobilePlayerSelect() : (appState === 'playing' ? renderGame() : renderMobileWaiting())
+                        (localPlayerId === null && !isAdminRemote) ? renderMobilePlayerSelect() : (appState === 'playing' ? renderGame() : renderMobileWaiting())
                     ) : (
                         <>
                             {appState === 'home' && renderHome()}

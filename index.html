@@ -146,6 +146,7 @@
         const IconList = ({ size = 24, className = "" }) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>;
         const IconPower = ({ size = 24, className = "" }) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M18.36 6.64a9 9 0 1 1-12.73 0"/><line x1="12" y1="2" x2="12" y2="12"/></svg>;
         const IconQrCode = ({ size = 24, className = "" }) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><rect x="3" y="3" width="6" height="6" rx="1"/><rect x="15" y="3" width="6" height="6" rx="1"/><rect x="3" y="15" width="6" height="6" rx="1"/><path d="M21 15v6"/><path d="M15 21h6"/><path d="M15 15h6"/><path d="M7 7h2"/><path d="M19 7h2"/><path d="M7 19h2"/></svg>;
+        const IconTrash = ({ size = 24, className = "" }) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>;
 
         // --- MATEMÁTICAS DIANA ---
         const polarToCartesian = (cx, cy, r, angleInDegrees) => {
@@ -184,6 +185,46 @@
             if (multiplier === 2) return `Doble ${sector}`;
             if (multiplier === 3) return `Triple ${sector}`;
             return `${sector}`;
+        };
+
+        // --- LÓGICA DE SUGERENCIAS (CHECKOUT) ---
+        const getCheckoutSuggestion = (score, dartsLeft) => {
+            if (score <= 0 || dartsLeft <= 0) return null;
+            
+            const shots = [];
+            // Prioridad: Sencillos > Bulls > Dobles > Triples
+            for (let i=20; i>=1; i--) shots.push({text: `${i}`, val: i});
+            shots.push({text: '25', val: 25});
+            for (let i=20; i>=1; i--) shots.push({text: `D${i}`, val: i*2});
+            shots.push({text: '50', val: 50});
+            for (let i=20; i>=1; i--) shots.push({text: `T${i}`, val: i*3});
+            
+            const uniqueShots = [];
+            const seen = new Set();
+            for (const s of shots) {
+                if (!seen.has(s.val)) {
+                    seen.add(s.val);
+                    uniqueShots.push(s);
+                }
+            }
+            uniqueShots.sort((a, b) => b.val - a.val); // Ordena de mayor a menor
+
+            const findPath = (target, depth) => {
+                if (depth === 0) return target === 0 ? [] : null;
+                for (const opt of uniqueShots) {
+                    if (target - opt.val >= 0) {
+                        const sub = findPath(target - opt.val, depth - 1);
+                        if (sub !== null) return [opt.text, ...sub];
+                    }
+                }
+                return null;
+            };
+
+            for (let depth = 1; depth <= dartsLeft; depth++) {
+                const result = findPath(score, depth);
+                if (result) return result;
+            }
+            return null;
         };
 
         function App() {
@@ -262,7 +303,8 @@
                 recordStatsText: null,
                 turnInRound: 0,
                 lastTurnPlayerIdx: null,
-                lastTurnThrows: []
+                lastTurnThrows: [],
+                history: []
             });
 
             // Estados Locales
@@ -272,6 +314,7 @@
             const [joinedViaUrl, setJoinedViaUrl] = useState(false); 
             const [tempNames, setTempNames] = useState(['', '']); 
             const [showExitConfirm, setShowExitConfirm] = useState(false);
+            const [showUndoConfirm, setShowUndoConfirm] = useState(false);
             const [showQR, setShowQR] = useState(false);
             const [hitFeedback, setHitFeedback] = useState(null);
             const [previewText, setPreviewText] = useState(null); 
@@ -280,6 +323,12 @@
             // Estado para el indicador de impacto superior derecho
             const [showTargetToast, setShowTargetToast] = useState(null);
             const toastTimeoutRef = useRef(null);
+            const [inputMode, setInputMode] = useState('board');
+            
+            const [savedNames, setSavedNames] = useState(() => {
+                try { return JSON.parse(localStorage.getItem('manitos_saved_names')) || []; } catch (e) { return []; }
+            });
+            const [activeNameInput, setActiveNameInput] = useState(null);
 
             // --- SINCRONIZACIÓN CON FIREBASE ---
             useEffect(() => {
@@ -442,13 +491,21 @@
                 const initialScore = ['301', '501', '701', '901'].includes(gameMode) ? parseInt(gameMode) : 
                                      (gameMode === 'around_the_clock' ? 1 : 0);
                 
+                // GUARDAR NOMBRES EN EL HISTORIAL (LOCALSTORAGE)
+                const currentNamesTrimmed = tempNames.map(n => n.trim().toUpperCase()).filter(n => n);
+                const newSavedNames = [...new Set([...savedNames, ...currentNamesTrimmed])];
+                setSavedNames(newSavedNames);
+                try { localStorage.setItem('manitos_saved_names', JSON.stringify(newSavedNames)); } catch(e) {}
+                
                 const newPlayers = tempNames.map((name, i) => ({
                     id: i,
                     name: name.trim() || `Jugador ${i + 1}`,
                     score: initialScore, 
                     previousRoundScore: initialScore,
                     marks: { 20: 0, 19: 0, 18: 0, 17: 0, 16: 0, 15: 0, 25: 0 },
-                    matchStats: { darts: 0, points: 0, marks: 0 } 
+                    matchStats: { darts: 0, points: 0, marks: 0 },
+                    lastTurnThrows: [],
+                    lastTurnBust: false
                 }));
                 
                 updateGame({
@@ -466,6 +523,7 @@
                     turnInRound: 0,
                     lastTurnPlayerIdx: null,
                     lastTurnThrows: [],
+                    history: [],
                     appState: isOnline ? 'setup_qr' : 'playing'
                 });
                 setShowExitConfirm(false);
@@ -529,7 +587,7 @@
                     const currentPointsScored = newThrows.reduce((sum, t) => sum + t.points, 0);
                     const remaining = players[currentPlayerIdx].previousRoundScore - currentPointsScored;
 
-                    if (remaining < 0 || remaining === 1) { 
+                    if (remaining < 0) { 
                         newIsBust = true;
                     }
                 } else if (gameMode === 'perdiz') {
@@ -563,7 +621,7 @@
                 return true;
             };
 
-            const undoThrow = () => {
+            const undoAction = () => {
                 if (!isActionAllowed()) return;
                 if (currentTurnThrows.length > 0 && !winner && !pendingConfirmation) {
                     const newThrows = [...currentTurnThrows];
@@ -574,7 +632,39 @@
                         isBust: false
                     });
                     setShowTargetToast(null);
+                } else if (currentTurnThrows.length === 0 && !pendingConfirmation) {
+                    const hist = gameState.history || [];
+                    if (hist.length > 0) {
+                        setShowUndoConfirm(true);
+                    }
                 }
+            };
+
+            const confirmUndoTurn = () => {
+                const hist = gameState.history || [];
+                if (hist.length > 0) {
+                    const lastState = hist[hist.length - 1];
+                    const newHistory = hist.slice(0, -1);
+                    updateGame({
+                        players: lastState.players,
+                        currentPlayerIdx: lastState.currentPlayerIdx,
+                        round: lastState.round,
+                        turnInRound: lastState.turnInRound,
+                        lastTurnPlayerIdx: lastState.lastTurnPlayerIdx,
+                        lastTurnThrows: lastState.lastTurnThrows,
+                        isNewRecord: lastState.isNewRecord,
+                        recordStatsText: lastState.recordStatsText,
+                        winner: lastState.winner,
+                        history: newHistory,
+                        currentTurnThrows: [],
+                        lastHit: null,
+                        isBust: false,
+                        pendingConfirmation: false,
+                        activeTab: 'board'
+                    });
+                    setShowTargetToast(null);
+                }
+                setShowUndoConfirm(false);
             };
 
             const requestTurnConfirmation = () => {
@@ -612,9 +702,26 @@
             const endTurn = () => {
                 if (currentTurnThrows.length < 3 && !isBust && !checkTentativeWin()) return;
 
+                // GUARDAR EL ESTADO EN EL HISTORIAL ANTES DE APLICAR EL FIN DE TURNO
+                const stateToSave = {
+                    players: JSON.parse(JSON.stringify(players)),
+                    currentPlayerIdx,
+                    round,
+                    turnInRound: gameState.turnInRound,
+                    lastTurnPlayerIdx: gameState.lastTurnPlayerIdx,
+                    lastTurnThrows: gameState.lastTurnThrows,
+                    isNewRecord,
+                    recordStatsText,
+                    winner
+                };
+                const newHistory = [...(gameState.history || []), stateToSave].slice(-20); // Mantiene los últimos 20 turnos para no sobrecargar el estado
+
                 let updatedPlayers = players.map(p => ({ ...p, marks: { ...p.marks }, matchStats: { ...p.matchStats } }));
                 let currentP = updatedPlayers[currentPlayerIdx];
                 
+                currentP.lastTurnThrows = [...currentTurnThrows]; // Clonamos el array por seguridad
+                currentP.lastTurnBust = isBust;
+
                 const isCricketMode = ['cut_throat', 'normal_cricket', 'no_score_cricket'].includes(gameMode);
                 let pointsScoredThisTurn = 0;
                 let marksScoredThisTurn = 0;
@@ -788,6 +895,7 @@
                     turnInRound: nextTurnInRound,
                     lastTurnPlayerIdx: isBust ? null : currentPlayerIdx,
                     lastTurnThrows: isBust ? [] : currentTurnThrows,
+                    history: newHistory,
                     activeTab: 'board'
                 });
 
@@ -799,6 +907,7 @@
                 setIsOnline(false);
                 setRoomId(null);
                 setShowTargetToast(null);
+                setShowUndoConfirm(false);
             };
 
             const triggerFeedback = (svgProps) => {
@@ -973,16 +1082,38 @@
                             <h2 className="text-3xl font-black text-center mb-6 text-fuchsia-400 shrink-0 drop-shadow-md">NOMBRES</h2>
                             
                             <div className={`grid gap-3 w-full flex-1 min-h-0 ${getDynamicGridClass(numPlayers)} content-center`}>
-                                {tempNames.map((name, i) => (
-                                    <div key={i} className="relative h-full">
-                                        <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none"><IconUser size={20} className="text-slate-400" /></div>
-                                        <input type="text" placeholder={`Jugador ${i + 1}`} value={name} onChange={(e) => {
-                                            const newNames = [...tempNames];
-                                            newNames[i] = e.target.value.toUpperCase();
-                                            setTempNames(newNames);
-                                        }} className="w-full h-full bg-slate-950/80 backdrop-blur-sm border-2 border-slate-700/50 text-cyan-300 pl-12 pr-4 py-3 rounded-xl text-lg font-bold uppercase focus:border-fuchsia-500 focus:outline-none"/>
-                                    </div>
-                                ))}
+                                {tempNames.map((name, i) => {
+                                    const suggestions = savedNames.filter(n => n.includes(name.toUpperCase()) && n !== name.toUpperCase());
+                                    return (
+                                        <div key={i} className={`relative h-full ${activeNameInput === 'names_' + i ? 'z-50' : 'z-10'}`}>
+                                            <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none"><IconUser size={20} className="text-slate-400" /></div>
+                                            <input type="text" placeholder={`Jugador ${i + 1}`} value={name} 
+                                                onFocus={() => setActiveNameInput(`names_${i}`)}
+                                                onBlur={() => setActiveNameInput(null)}
+                                                onChange={(e) => {
+                                                    const newNames = [...tempNames];
+                                                    newNames[i] = e.target.value.toUpperCase();
+                                                    setTempNames(newNames);
+                                                }} className="w-full h-full bg-slate-950/80 backdrop-blur-sm border-2 border-slate-700/50 text-cyan-300 pl-12 pr-4 py-3 rounded-xl text-lg font-bold uppercase focus:border-fuchsia-500 focus:outline-none"/>
+                                            
+                                            {activeNameInput === `names_${i}` && suggestions.length > 0 && (
+                                                <div className="absolute top-full left-0 right-0 mt-2 bg-slate-800 border-2 border-slate-600 rounded-xl shadow-[0_10px_40px_rgba(0,0,0,0.8)] max-h-48 overflow-y-auto backdrop-blur-md">
+                                                    {suggestions.map((sugg, sIdx) => (
+                                                        <div key={sIdx} className="px-4 py-3 hover:bg-slate-700 cursor-pointer text-cyan-300 font-bold uppercase border-b border-slate-700/50 last:border-0 transition-colors" onMouseDown={(e) => {
+                                                            e.preventDefault(); // Evita que se cierre antes de registrar el clic
+                                                            const newNames = [...tempNames];
+                                                            newNames[i] = sugg;
+                                                            setTempNames(newNames);
+                                                            setActiveNameInput(null);
+                                                        }}>
+                                                            {sugg}
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            )}
+                                        </div>
+                                    );
+                                })}
                             </div>
                             
                             <div className="flex gap-4 mt-6 shrink-0">
@@ -1051,6 +1182,108 @@
                                         {p.name}
                                     </button>
                                 ))}
+                            </div>
+                        </div>
+                    </div>
+                );
+            };
+
+            const renderRematchConfig = () => {
+                const isNamesValid = tempNames.length > 0 && tempNames.every(name => name.trim().length > 0);
+
+                return (
+                    <div className="flex-1 flex flex-col items-center justify-center p-4 relative min-h-0 z-10">
+                        <div className="z-10 w-full max-w-md bg-slate-900/90 backdrop-blur-xl p-6 md:p-8 rounded-3xl border border-cyan-500/30 shadow-[0_0_50px_rgba(6,182,212,0.2)] flex flex-col min-h-0 max-h-full">
+                            <h2 className="text-2xl md:text-3xl font-black text-center mb-6 text-cyan-400 shrink-0 drop-shadow-md uppercase">Opciones de Revancha</h2>
+                            
+                            <div className="flex flex-col gap-5 flex-1 overflow-y-auto pr-2 pb-2">
+                                <div>
+                                    <label className="block text-fuchsia-400 text-sm font-bold mb-1 uppercase flex items-center gap-2"><IconGamepad size={16}/> Modo de Juego</label>
+                                    <select value={gameMode} onChange={(e) => updateGame({ gameMode: e.target.value })} className="w-full bg-slate-950/80 border-2 border-slate-700/50 text-white p-3 rounded-xl text-lg font-bold text-center appearance-none cursor-pointer focus:border-fuchsia-500 focus:outline-none backdrop-blur-sm">
+                                        <optgroup label="Crickets">
+                                            <option value="cut_throat">CRICKET INVERSO</option>
+                                            <option value="normal_cricket">CRICKET (PUNTOS)</option>
+                                            <option value="no_score_cricket">CRICKET (SIN PUNTOS)</option>
+                                        </optgroup>
+                                        <optgroup label="X01 Clásicos">
+                                            <option value="301">301</option>
+                                            <option value="501">501</option>
+                                            <option value="701">701</option>
+                                            <option value="901">901</option>
+                                        </optgroup>
+                                        <optgroup label="Especiales">
+                                            <option value="high_score">HIGH SCORE (7 Rondas)</option>
+                                            <option value="around_the_clock">RELOJ (1 al 20)</option>
+                                            <option value="perdiz">PERDIZ GAME (696 pts)</option>
+                                        </optgroup>
+                                    </select>
+                                </div>
+
+                                <div>
+                                    <label className="block text-cyan-400 text-sm font-bold mb-2 uppercase flex items-center gap-2"><IconUsers size={16}/> Jugadores ({tempNames.length})</label>
+                                    <div className="flex flex-col gap-2">
+                                        {tempNames.map((name, i) => {
+                                            const suggestions = savedNames.filter(n => n.includes(name.toUpperCase()) && n !== name.toUpperCase());
+                                            return (
+                                                <div key={i} className="flex items-center gap-2">
+                                                    <div className={`relative flex-1 ${activeNameInput === 'rematch_' + i ? 'z-50' : 'z-10'}`}>
+                                                        <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none"><IconUser size={16} className="text-slate-400" /></div>
+                                                        <input type="text" placeholder={`Jugador ${i + 1}`} value={name} 
+                                                            onFocus={() => setActiveNameInput(`rematch_${i}`)}
+                                                            onBlur={() => setActiveNameInput(null)}
+                                                            onChange={(e) => {
+                                                                const newNames = [...tempNames];
+                                                                newNames[i] = e.target.value.toUpperCase();
+                                                                setTempNames(newNames);
+                                                            }} className="w-full bg-slate-950/80 border-2 border-slate-700/50 text-cyan-300 pl-10 pr-3 py-2.5 rounded-lg text-sm md:text-base font-bold uppercase focus:border-cyan-500 focus:outline-none"/>
+                                                        
+                                                        {activeNameInput === `rematch_${i}` && suggestions.length > 0 && (
+                                                            <div className="absolute top-full left-0 right-0 mt-1 bg-slate-800 border-2 border-slate-600 rounded-xl shadow-[0_10px_40px_rgba(0,0,0,0.8)] z-50 max-h-40 overflow-y-auto backdrop-blur-md">
+                                                                {suggestions.map((sugg, sIdx) => (
+                                                                    <div key={sIdx} className="px-3 py-2.5 hover:bg-slate-700 cursor-pointer text-cyan-300 font-bold uppercase text-sm md:text-base border-b border-slate-700/50 last:border-0 transition-colors" onMouseDown={(e) => {
+                                                                        e.preventDefault();
+                                                                        const newNames = [...tempNames];
+                                                                        newNames[i] = sugg;
+                                                                        setTempNames(newNames);
+                                                                        setActiveNameInput(null);
+                                                                    }}>
+                                                                        {sugg}
+                                                                    </div>
+                                                                ))}
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                    <button onClick={() => {
+                                                        const newNames = tempNames.filter((_, idx) => idx !== i);
+                                                        setTempNames(newNames);
+                                                        updateGame({ numPlayers: newNames.length });
+                                                    }} className="bg-red-900/40 text-red-400 p-2.5 rounded-lg border border-red-900/50 hover:bg-red-600 hover:text-white transition-colors">
+                                                        <IconTrash size={20} />
+                                                    </button>
+                                                </div>
+                                            );
+                                        })}
+                                        {tempNames.length < 8 && (
+                                            <button onClick={() => {
+                                                const newNames = [...tempNames, ''];
+                                                setTempNames(newNames);
+                                                updateGame({ numPlayers: newNames.length });
+                                            }} className="w-full border-2 border-dashed border-slate-700/50 bg-slate-800/30 text-slate-400 hover:text-cyan-400 hover:border-cyan-500/50 py-3 rounded-lg font-bold flex items-center justify-center gap-2 transition-colors mt-1">
+                                                + Añadir Jugador
+                                            </button>
+                                        )}
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="flex gap-3 mt-4 shrink-0 border-t border-slate-700/50 pt-4">
+                                <button onClick={resetGame} className="flex-1 bg-slate-800/80 hover:bg-slate-700/80 text-white font-bold py-3 md:py-4 rounded-xl transition-all border border-slate-600/50">Salir</button>
+                                <button 
+                                    onClick={initPlayers} 
+                                    disabled={!isNamesValid || tempNames.length < 1}
+                                    className={`flex-[2] py-3 md:py-4 rounded-xl flex items-center justify-center gap-2 text-base md:text-lg uppercase transition-all ${isNamesValid && tempNames.length > 0 ? 'bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white font-black active:scale-95 shadow-[0_0_20px_rgba(6,182,212,0.4)]' : 'bg-slate-800/80 text-slate-500 font-bold cursor-not-allowed border border-slate-700/50'}`}>
+                                    ¡A Jugar! <IconPlay size={20} />
+                                </button>
                             </div>
                         </div>
                     </div>
@@ -1212,6 +1445,19 @@
                             </div>
                         )}
 
+                        {showUndoConfirm && (
+                            <div className="absolute inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
+                                <div className="bg-slate-900 border border-slate-700 p-8 rounded-3xl max-w-sm w-full text-center shadow-[0_0_50px_rgba(236,72,153,0.3)] flex flex-col animate-toast">
+                                    <h3 className="text-3xl font-black text-white mb-4 shrink-0">¿Deshacer Turno?</h3>
+                                    <p className="text-slate-400 mb-8 font-bold flex-1">Se borrará la puntuación del jugador anterior y volverá a ser su turno. ¿Estás seguro?</p>
+                                    <div className="flex gap-4 shrink-0">
+                                        <button onClick={() => setShowUndoConfirm(false)} className="flex-1 py-4 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-bold transition-colors">Cancelar</button>
+                                        <button onClick={confirmUndoTurn} className="flex-1 py-4 rounded-xl bg-fuchsia-600 hover:bg-fuchsia-500 text-white font-black transition-colors shadow-[0_0_15px_rgba(236,72,153,0.4)]">Sí, deshacer</button>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
                         {winner && (
                             <div className="absolute inset-0 z-40 bg-black/90 backdrop-blur-xl flex flex-col items-center justify-center p-4 text-center">
                                 <IconTrophy size={100} className="text-yellow-400 drop-shadow-[0_0_40px_rgba(250,204,21,0.8)] mb-4 animate-bounce shrink-0" />
@@ -1238,7 +1484,7 @@
                                 )}
                                 {!joinedViaUrl && (
                                     <div className="flex gap-4 shrink-0 mt-auto">
-                                        <button onClick={() => { setTempNames(players.map(p => p.name)); initPlayers(); }} className="bg-slate-800 hover:bg-slate-700 text-white font-bold py-4 px-8 rounded-xl transition-colors text-xl">Revancha</button>
+                                        <button onClick={() => { setTempNames(players.map(p => p.name)); updateGame({ numPlayers: players.length, appState: 'setup_rematch' }); }} className="bg-slate-800 hover:bg-slate-700 border border-slate-600 text-white font-bold py-4 px-8 rounded-xl transition-colors text-xl shadow-lg">Revancha</button>
                                         <button onClick={resetGame} className="bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white font-black py-4 px-8 rounded-xl shadow-[0_0_20px_rgba(6,182,212,0.4)] transition-transform active:scale-95 text-xl">Menú Principal</button>
                                     </div>
                                 )}
@@ -1287,6 +1533,10 @@
                                     <div className={`order-2 md:order-1 ${joinedViaUrl ? 'flex-1' : 'flex-[2] md:flex-[3]'} flex items-center justify-center bg-slate-900/80 backdrop-blur-md rounded-3xl border border-slate-700/50 p-1 md:p-2 relative overflow-hidden shadow-[0_0_30px_rgba(0,0,0,0.5)] min-h-0`}>
                                         <div className="absolute inset-0 opacity-10" style={{ backgroundImage: 'linear-gradient(#334155 1px, transparent 1px), linear-gradient(90deg, #334155 1px, transparent 1px)', backgroundSize: '20px 20px'}}></div>
                                         
+                                        <button onClick={() => setInputMode(m => m === 'board' ? 'numbers' : 'board')} className="absolute top-2 md:top-3 left-2 md:left-3 z-30 bg-slate-800/90 text-cyan-400 border border-cyan-500/50 rounded-lg px-2 md:px-3 py-1.5 text-[10px] md:text-xs font-bold backdrop-blur-sm flex items-center gap-1.5 md:gap-2 shadow-[0_0_15px_rgba(6,182,212,0.3)] hover:bg-slate-700 active:scale-95 transition-all">
+                                            {inputMode === 'board' ? <><IconList size={14} className="shrink-0"/> <span className="hidden sm:inline">Modo Num</span><span className="sm:hidden">Num</span></> : <><IconTarget size={14} className="shrink-0"/> <span className="hidden sm:inline">Modo Diana</span><span className="sm:hidden">Diana</span></>}
+                                        </button>
+
                                         {/* TOAST INDICADOR DE IMPACTO EN LA ESQUINA SUPERIOR DERECHA DE LA DIANA */}
                                         {showTargetToast && (
                                             <div key={showTargetToast.id} className={`absolute top-4 right-4 z-20 bg-slate-950/90 border-2 ${showTargetToast.colorClass} rounded-2xl px-6 py-4 flex flex-col items-center justify-center animate-toast backdrop-blur-sm pointer-events-none`}>
@@ -1295,7 +1545,8 @@
                                             </div>
                                         )}
 
-                                        <svg viewBox="0 0 340 340" className="w-full h-full object-contain drop-shadow-[0_0_30px_rgba(0,0,0,0.8)] z-10" style={{ touchAction: 'none' }}>
+                                        {inputMode === 'board' ? (
+                                            <svg viewBox="0 0 340 340" className="w-full h-full object-contain drop-shadow-[0_0_30px_rgba(0,0,0,0.8)] z-10" style={{ touchAction: 'none' }}>
                                             {/* Fondo para capturar el fallo tocando fuera de los números */}
                                             <rect x="0" y="0" width="340" height="340" fill="transparent" className="cursor-pointer" onClick={handleMiss} />
                                             <circle cx={cx} cy={cy} r={maxR + 25} fill="#020617" className="cursor-pointer" onClick={handleMiss} />
@@ -1376,7 +1627,45 @@
                                                     )}
                                                 </g>
                                             )}
-                                        </svg>
+                                            </svg>
+                                        ) : (
+                                            <div className="absolute inset-0 z-10 bg-slate-900/95 backdrop-blur-xl flex flex-col">
+                                                <div className="flex-1 p-1.5 md:p-3 pt-12 md:pt-14 pb-1.5 md:pb-3 flex flex-col min-h-0 w-full">
+                                                    <div className={`grid ${isCricket ? 'grid-cols-3 md:grid-cols-6' : 'grid-cols-5 md:grid-cols-10'} gap-1.5 md:gap-2 w-full h-full`}>
+                                                        {(isCricket ? [15, 16, 17, 18, 19, 20] : [...Array(20)].map((_, i) => i + 1)).map((num) => {
+                                                            return (
+                                                                <div key={num} className="flex flex-col gap-1 md:gap-1.5 bg-slate-950/80 p-1 md:p-1.5 rounded-xl md:rounded-2xl border border-slate-700/50 shadow-inner min-h-0">
+                                                                    <button onClick={() => handleHit(num, 1)} disabled={!isActionAllowed() || isTurnComplete || winner || pendingConfirmation} className="flex-[3] w-full bg-slate-800 hover:bg-slate-700 text-white font-black text-lg md:text-2xl lg:text-3xl rounded-lg md:rounded-xl active:bg-cyan-600 disabled:opacity-30 transition-colors shadow-sm flex items-center justify-center">
+                                                                        {num}
+                                                                    </button>
+                                                                    <div className="flex-[2] w-full flex gap-1 md:gap-1.5">
+                                                                        <button onClick={() => handleHit(num, 2)} disabled={!isActionAllowed() || isTurnComplete || winner || pendingConfirmation} className="flex-1 bg-fuchsia-900/40 hover:bg-fuchsia-800/60 text-fuchsia-400 font-black text-[10px] sm:text-xs md:text-sm lg:text-base rounded-md md:rounded-lg border border-fuchsia-500/30 active:bg-fuchsia-600 disabled:opacity-30 transition-colors flex items-center justify-center">
+                                                                            D
+                                                                        </button>
+                                                                        <button onClick={() => handleHit(num, 3)} disabled={!isActionAllowed() || isTurnComplete || winner || pendingConfirmation} className="flex-1 bg-yellow-900/40 hover:bg-yellow-800/60 text-yellow-400 font-black text-[10px] sm:text-xs md:text-sm lg:text-base rounded-md md:rounded-lg border border-yellow-500/30 active:bg-yellow-600 disabled:opacity-30 transition-colors flex items-center justify-center">
+                                                                            T
+                                                                        </button>
+                                                                    </div>
+                                                                </div>
+                                                            );
+                                                        })}
+                                                    </div>
+                                                </div>
+                                                <div className="shrink-0 flex gap-1.5 md:gap-3 p-1.5 md:p-3 border-t border-slate-700/50 bg-slate-950/80 w-full h-16 md:h-24">
+                                                    <div className="flex-[2] flex gap-1.5 md:gap-3 bg-slate-900/80 p-1 md:p-1.5 rounded-xl md:rounded-2xl border border-slate-700/50 shadow-inner h-full">
+                                                        <button onClick={() => handleHit(25, 1)} disabled={!isActionAllowed() || isTurnComplete || winner || pendingConfirmation} className="flex-1 h-full bg-cyan-900/40 hover:bg-cyan-800/60 text-cyan-400 font-black text-[11px] md:text-xl lg:text-2xl rounded-lg md:rounded-xl active:bg-cyan-600 border border-cyan-500/30 disabled:opacity-30 transition-colors flex flex-col md:flex-row items-center justify-center gap-0.5 md:gap-2">
+                                                            <span>25</span> <span className="text-[9px] md:text-sm uppercase opacity-80">(Bull)</span>
+                                                        </button>
+                                                        <button onClick={() => handleHit(25, 2)} disabled={!isActionAllowed() || isTurnComplete || winner || pendingConfirmation} className="flex-1 h-full bg-red-900/40 hover:bg-red-800/60 text-red-400 font-black text-[11px] md:text-xl lg:text-2xl rounded-lg md:rounded-xl active:bg-red-600 border border-red-500/30 disabled:opacity-30 transition-colors flex flex-col md:flex-row items-center justify-center gap-0.5 md:gap-2">
+                                                            <span>50</span> <span className="text-[9px] md:text-sm uppercase opacity-80">(D-Bull)</span>
+                                                        </button>
+                                                    </div>
+                                                    <button onClick={handleMiss} disabled={!isActionAllowed() || isTurnComplete || winner || pendingConfirmation} className="flex-1 h-full bg-slate-800 hover:bg-slate-700 text-slate-300 font-black text-xs md:text-xl lg:text-2xl rounded-xl md:rounded-2xl active:bg-slate-600 border border-slate-600/50 disabled:opacity-30 transition-colors shadow-inner flex items-center justify-center">
+                                                        FALLO
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        )}
                                     </div>
 
                                     <div className={`order-1 md:order-2 ${joinedViaUrl ? 'flex-none shrink-0' : 'flex-[3] md:flex-[2] h-full'} flex flex-col gap-2 min-h-0`}>
@@ -1388,12 +1677,44 @@
                                                         Turno de {gameMode === 'high_score' && <span className="text-fuchsia-400">- R{round}/7</span>}
                                                     </span>
                                                     <h3 className="text-base md:text-3xl font-black text-cyan-400 truncate leading-tight drop-shadow-[0_0_10px_rgba(6,182,212,0.5)]">{currentPlayer.name}</h3>
+                                                    <div className="flex flex-wrap items-center gap-1 md:gap-2 mt-0.5 md:mt-1">
+                                                        <div className="inline-flex items-center gap-1 md:gap-1.5 bg-slate-950/50 px-2 py-0.5 rounded-md border border-slate-700/50 truncate max-w-full">
+                                                            <span className="text-[8px] md:text-[10px] text-slate-500 uppercase font-black tracking-widest shrink-0">Última tirada:</span>
+                                                            <span className="text-[9px] md:text-xs text-slate-300 font-bold truncate">
+                                                                {currentPlayer.lastTurnThrows && currentPlayer.lastTurnThrows.length > 0 ? (
+                                                                    currentPlayer.lastTurnBust ? <span className="text-red-400 animate-pulse">BUST</span> : currentPlayer.lastTurnThrows.map(t => t.text).join(' · ')
+                                                                ) : (
+                                                                    <span className="text-slate-600">-</span>
+                                                                )}
+                                                            </span>
+                                                        </div>
+                                                        {['301', '501', '701', '901'].includes(gameMode) && getLiveScore(currentPlayer, currentPlayerIdx) <= 180 && getLiveScore(currentPlayer, currentPlayerIdx) > 0 && currentTurnThrows.length < 3 && !isBust && (
+                                                            <div className="inline-flex items-center gap-1 md:gap-1.5 bg-cyan-950/50 px-2 py-0.5 rounded-md border border-cyan-700/50 truncate max-w-full animate-toast">
+                                                                <span className="text-[8px] md:text-[10px] text-cyan-500 uppercase font-black tracking-widest shrink-0">Cierre:</span>
+                                                                <span className="text-[9px] md:text-xs text-cyan-300 font-bold truncate">
+                                                                    {getCheckoutSuggestion(getLiveScore(currentPlayer, currentPlayerIdx), 3 - currentTurnThrows.length)?.join(' · ') || 'Sin cierre'}
+                                                                </span>
+                                                            </div>
+                                                        )}
+                                                    </div>
                                                 </div>
                                                 <div className="flex gap-1 md:gap-2 shrink-0 ml-1 md:ml-2">
                                                     {[0, 1, 2].map(i => {
                                                         const t = currentTurnThrows[i];
                                                         const isThrown = i < currentTurnThrows.length;
-                                                        return <div key={i} className={`w-6 h-6 md:w-12 md:h-12 rounded-full flex items-center justify-center border-2 transition-all ${isThrown ? (isBust ? 'border-red-500 bg-red-500/30 shadow-[0_0_10px_rgba(239,68,68,0.5)]' : (t.stolen ? 'border-amber-500 bg-amber-500/30 shadow-[0_0_10px_rgba(245,158,11,0.5)]' : 'border-fuchsia-500 bg-fuchsia-500/30 shadow-[0_0_10px_rgba(236,72,153,0.5)]')) : 'border-slate-700/50 bg-slate-800/50'}`}><IconDart size={14} className={isThrown ? (isBust ? 'text-red-400' : (t.stolen ? 'text-amber-400' : 'text-fuchsia-400')) : 'text-slate-500'} /></div>;
+                                                        
+                                                        let shortText = '';
+                                                        if (isThrown) {
+                                                            if (t.sector === 0) shortText = '0';
+                                                            else if (t.sector === 25) shortText = t.multiplier === 1 ? '25' : '50';
+                                                            else shortText = (t.multiplier === 3 ? 'T' : (t.multiplier === 2 ? 'D' : '')) + t.sector;
+                                                        }
+
+                                                        return (
+                                                            <div key={i} className={`w-12 h-12 md:w-20 md:h-20 rounded-xl md:rounded-2xl flex items-center justify-center border-[3px] md:border-4 transition-all ${isThrown ? (isBust ? 'border-red-500 bg-slate-950 shadow-[0_0_15px_rgba(239,68,68,0.5)]' : (t.stolen ? 'border-amber-500 bg-slate-950 shadow-[0_0_15px_rgba(245,158,11,0.5)]' : 'border-fuchsia-500 bg-slate-950 shadow-[0_0_15px_rgba(236,72,153,0.5)]')) : 'border-slate-700/50 bg-slate-800/30'}`}>
+                                                                {isThrown ? <span className={`font-black text-base md:text-3xl ${isBust ? 'text-red-400' : (t.stolen ? 'text-amber-400' : 'text-fuchsia-400')}`}>{shortText}</span> : <IconDart size={24} className="text-slate-500 md:scale-125" />}
+                                                            </div>
+                                                        );
                                                     })}
                                                 </div>
                                             </div>
@@ -1410,8 +1731,8 @@
                                                     </button>
                                                 </div>
                                                 <div className="flex gap-1.5 md:gap-2 h-8 md:h-16">
-                                                    <button onClick={undoThrow} disabled={!isActionAllowed() || currentTurnThrows.length === 0 || winner || pendingConfirmation} className="flex-1 rounded-lg md:rounded-xl bg-slate-800/60 text-slate-200 font-bold text-[9px] md:text-sm flex flex-col md:flex-row gap-1 items-center justify-center disabled:opacity-30 active:bg-slate-700/80 h-full backdrop-blur-sm border border-slate-600/30">
-                                                        <IconUndo size={14} /> <span className="hidden lg:inline">Deshacer</span>
+                                                    <button onClick={undoAction} disabled={!isActionAllowed() || (currentTurnThrows.length === 0 && !(gameState.history && gameState.history.length > 0)) || winner || pendingConfirmation} className="flex-1 rounded-lg md:rounded-xl bg-slate-800/60 text-slate-200 font-bold text-[9px] md:text-sm flex flex-col md:flex-row gap-1 items-center justify-center disabled:opacity-30 active:bg-slate-700/80 h-full backdrop-blur-sm border border-slate-600/30">
+                                                        <IconUndo size={14} /> <span className="hidden lg:inline">{currentTurnThrows.length === 0 ? "Deshacer Turno" : "Deshacer"}</span>
                                                     </button>
                                                     
                                                     <button onClick={requestTurnConfirmation} disabled={!isActionAllowed() || (!isTurnComplete && !winner) || pendingConfirmation} className={`flex-[2] rounded-lg md:rounded-xl font-black text-[10px] md:text-lg flex items-center justify-center gap-1 md:gap-2 transition-all h-full ${isTurnComplete && !winner ? 'bg-gradient-to-r from-cyan-500 to-blue-600 text-white animate-pulse shadow-[0_0_15px_rgba(6,182,212,0.5)]' : 'bg-slate-800/50 text-slate-500 opacity-50 border border-slate-700/50'}`}>
@@ -1554,6 +1875,7 @@
                             {appState === 'setup_config' && renderConfig()}
                             {appState === 'setup_names' && renderNames()}
                             {appState === 'setup_qr' && renderSetupQR()}
+                            {appState === 'setup_rematch' && renderRematchConfig()}
                             {appState === 'playing' && renderGame()}
                             {appState === 'ranking' && renderRanking()}
                         </>

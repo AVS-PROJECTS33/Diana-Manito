@@ -675,7 +675,7 @@
             // Mantiene siempre acceso a las últimas funciones de la partida sin perder contexto
             useEffect(() => {
                 processVoiceCommandRef.current = (transcript) => {
-                    let text = transcript.toLowerCase().replace(/[.,;:?!-]/g, ' ').trim();
+                    let text = transcript.toLowerCase().replace(/[.,;:?!_\-—]/g, ' ').replace(/\by\b|\be\b/g, ' ').trim();
                     text = text.replace(/doble/g, ' doble ').replace(/triple/g, ' triple ');
                     
                     const numbersMap = {
@@ -723,10 +723,55 @@
                         let num = parseInt(word);
                         if (isNaN(num)) num = numbersMap[word];
                         
-                        if (num !== undefined && num >= 1 && num <= 20) {
-                            throws.push({ sector: num, mult: currentMult });
-                            currentMult = 1;
-                            continue;
+                        if (num !== undefined) {
+                            if (num >= 1 && num <= 20) {
+                                throws.push({ sector: num, mult: currentMult });
+                                currentMult = 1;
+                                continue;
+                            } else if (num > 20) {
+                                const strNum = num.toString();
+                                let parsedThrows = [];
+                                let tempIdx = 0;
+                                let valid = true;
+                                
+                                while (tempIdx < strNum.length) {
+                                    if (tempIdx + 1 < strNum.length) {
+                                        let twoDigits = parseInt(strNum.substring(tempIdx, tempIdx + 2));
+                                        if ((twoDigits >= 10 && twoDigits <= 20) || twoDigits === 25 || twoDigits === 50) {
+                                            parsedThrows.push(twoDigits);
+                                            tempIdx += 2;
+                                            continue;
+                                        }
+                                    }
+                                    let oneDigit = parseInt(strNum.substring(tempIdx, tempIdx + 1));
+                                    if (oneDigit >= 1 && oneDigit <= 9) {
+                                        parsedThrows.push(oneDigit);
+                                        tempIdx += 1;
+                                        continue;
+                                    }
+                                    if (oneDigit === 0) {
+                                        parsedThrows.push(0);
+                                        tempIdx += 1;
+                                        continue;
+                                    }
+                                    valid = false;
+                                    break; 
+                                }
+                                
+                                if (valid && parsedThrows.length > 0) {
+                                    parsedThrows.forEach(n => {
+                                        if (n === 25) {
+                                            throws.push({ sector: 25, mult: currentMult === 2 ? 2 : 1 });
+                                        } else if (n === 50) {
+                                            throws.push({ sector: 25, mult: 2 });
+                                        } else {
+                                            throws.push({ sector: n, mult: currentMult });
+                                        }
+                                        currentMult = 1;
+                                    });
+                                    continue;
+                                }
+                            }
                         }
                     }
 
@@ -1851,14 +1896,14 @@
                                 
                                 let shortText = '';
                                 if (isThrown) {
-                                    if (t.sector === 0) shortText = '0';
+                                    if (t.sector === 0) shortText = 'Fallo';
                                     else if (t.sector === 25) shortText = t.multiplier === 1 ? '25' : '50';
                                     else shortText = (t.multiplier === 3 ? 'T' : (t.multiplier === 2 ? 'D' : '')) + t.sector;
                                 }
 
                                 return (
-                                    <div key={i} className={`flex-1 max-w-[80px] aspect-square rounded-xl md:rounded-2xl flex items-center justify-center border-[3px] md:border-4 transition-all ${isThrown ? (isBust ? 'border-red-500 bg-slate-950 shadow-[0_0_15px_rgba(239,68,68,0.5)]' : (t.stolen ? 'border-amber-500 bg-slate-950 shadow-[0_0_15px_rgba(245,158,11,0.5)]' : 'border-fuchsia-500 bg-slate-950 shadow-[0_0_15px_rgba(236,72,153,0.5)]')) : 'border-slate-700/50 bg-slate-800/30'}`}>
-                                        {isThrown ? <span className={`font-black text-xl md:text-3xl ${isBust ? 'text-red-400' : (t.stolen ? 'text-amber-400' : 'text-fuchsia-400')}`}>{shortText}</span> : <IconDart size={24} className="text-slate-500 md:scale-125" />}
+                                    <div key={i} className={`flex-1 max-w-[80px] aspect-square rounded-xl md:rounded-2xl flex items-center justify-center border-[3px] md:border-4 transition-all ${isThrown ? (isBust || t.sector === 0 ? 'border-red-500 bg-slate-950 shadow-[0_0_15px_rgba(239,68,68,0.5)]' : (t.stolen ? 'border-amber-500 bg-slate-950 shadow-[0_0_15px_rgba(245,158,11,0.5)]' : 'border-fuchsia-500 bg-slate-950 shadow-[0_0_15px_rgba(236,72,153,0.5)]')) : 'border-slate-700/50 bg-slate-800/30'}`}>
+                                        {isThrown ? <span className={`font-black ${shortText === 'Fallo' ? 'text-sm md:text-xl' : 'text-xl md:text-3xl'} ${isBust || t.sector === 0 ? 'text-red-400' : (t.stolen ? 'text-amber-400' : 'text-fuchsia-400')}`}>{shortText}</span> : <IconDart size={24} className="text-slate-500 md:scale-125" />}
                                     </div>
                                 );
                             })}

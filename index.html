@@ -837,7 +837,7 @@
             const allKnownNames = [...new Set([
                 ...savedNames,
                 ...rankingsData.map(p => p.name.toUpperCase())
-            ])].sort();
+            ])].reverse();
 
             // --- LÓGICA DE EDICIÓN DE PERFIL ---
             const confirmEditProfileName = async () => {

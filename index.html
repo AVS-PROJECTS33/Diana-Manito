@@ -675,11 +675,11 @@
             // Mantiene siempre acceso a las últimas funciones de la partida sin perder contexto
             useEffect(() => {
                 processVoiceCommandRef.current = (transcript) => {
-                    let text = transcript.toLowerCase().replace(/[.,;:?!]/g, ' ').trim();
+                    let text = transcript.toLowerCase().replace(/[.,;:?!-]/g, ' ').trim();
                     text = text.replace(/doble/g, ' doble ').replace(/triple/g, ' triple ');
                     
                     const numbersMap = {
-                        "uno": 1, "dos": 2, "tres": 3, "cuatro": 4, "cinco": 5, 
+                        "un": 1, "uno": 1, "dos": 2, "tres": 3, "cuatro": 4, "cinco": 5, 
                         "seis": 6, "siete": 7, "ocho": 8, "nueve": 9, "diez": 10, 
                         "once": 11, "doce": 12, "trece": 13, "catorce": 14, "quince": 15, 
                         "dieciséis": 16, "diecisiete": 17, "dieciocho": 18, "diecinueve": 19, "veinte": 20
@@ -944,8 +944,7 @@
                         currentTurnThrows: [],
                         lastHit: null,
                         isBust: false,
-                        pendingConfirmation: false,
-                        activeTab: 'board'
+                        pendingConfirmation: false
                     });
                     setShowTargetToast(null);
                 }
@@ -1185,8 +1184,7 @@
                     lastTurnPlayerIdx: currentPlayerIdx,
                     lastTurnThrows: [...currentTurnThrows],
                     lastTurnBust: isBust,
-                    history: newHistory,
-                    activeTab: 'board'
+                    history: newHistory
                 });
 
                 setShowTargetToast(null);
@@ -1890,8 +1888,8 @@
 
                         {/* 4. Botones Deshacer y Dictar */}
                         <div className="flex gap-2 h-10 md:h-12 mt-1">
-                            <button onClick={undoAction} disabled={!isActionAllowed() || (currentTurnThrows.length === 0 && !(gameState.history && gameState.history.length > 0)) || winner || pendingConfirmation} className="flex-1 rounded-lg md:rounded-xl bg-slate-800/60 text-slate-200 font-bold text-xs md:text-sm flex gap-1 items-center justify-center disabled:opacity-30 active:bg-slate-700/80 backdrop-blur-sm border border-slate-600/30">
-                                <IconUndo size={16} /> <span>{currentTurnThrows.length === 0 ? "Turno" : "Deshacer"}</span>
+                            <button onClick={undoAction} disabled={!isActionAllowed() || (currentTurnThrows.length === 0 && !(gameState.history && gameState.history.length > 0)) || winner || pendingConfirmation} className="flex-1 rounded-lg md:rounded-xl bg-slate-800/60 text-slate-200 font-bold text-xs md:text-sm flex gap-1 items-center justify-center disabled:opacity-30 active:bg-slate-700/80 backdrop-blur-sm border border-slate-600/30 overflow-hidden">
+                                <IconUndo size={16} className="shrink-0" /> <span className="truncate">{currentTurnThrows.length === 0 ? "Deshacer Turno" : "Deshacer"}</span>
                             </button>
 
                             <button onClick={toggleListening} disabled={!isActionAllowed() || isTurnComplete || winner || pendingConfirmation} className={`flex-1 rounded-lg md:rounded-xl font-bold text-xs md:text-sm flex gap-1 items-center justify-center transition-all backdrop-blur-sm border disabled:opacity-30 ${isListening ? 'bg-red-900/40 text-red-400 border-red-500/80 animate-pulse shadow-[0_0_15px_rgba(239,68,68,0.4)]' : 'bg-slate-800/60 text-fuchsia-400 border-fuchsia-500/50 hover:bg-slate-700/80 shadow-[0_0_15px_rgba(236,72,153,0.3)]'}`}>

@@ -183,7 +183,7 @@
 
         const getSectorText = (sector, multiplier) => {
             if (sector === 0) return 'Fallo (Fuera)';
-            if (sector === 25) return multiplier === 1 ? '25 (Fuera Diana)' : '50 (Diana)';
+            if (sector === 25) return multiplier === 1 ? '25 (Simple Diana)' : '50 (Doble Diana)';
             if (multiplier === 2) return `Doble ${sector}`;
             if (multiplier === 3) return `Triple ${sector}`;
             return `${sector}`;
@@ -678,6 +678,13 @@
                     let text = transcript.toLowerCase().replace(/[.,;:?!_\-—]/g, ' ').replace(/\by\b|\be\b/g, ' ').trim();
                     text = text.replace(/doble/g, ' doble ').replace(/triple/g, ' triple ');
                     
+                    // Agrupar frases compuestas de la diana para evitar que se dividan en 2 dardos
+                    text = text.replace(/fuera diana/g, 'veinticinco');
+                    text = text.replace(/simple diana/g, 'veinticinco');
+                    text = text.replace(/outer bull/g, 'veinticinco');
+                    text = text.replace(/inner bull/g, 'cincuenta');
+                    text = text.replace(/bullseye/g, 'cincuenta');
+
                     const numbersMap = {
                         "un": 1, "uno": 1, "dos": 2, "tres": 3, "cuatro": 4, "cinco": 5, 
                         "seis": 6, "siete": 7, "ocho": 8, "nueve": 9, "diez": 10, 
@@ -1264,8 +1271,14 @@
                         <h1 className="text-5xl font-black text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-fuchsia-500 mb-8 drop-shadow-md">MANITO'S DARTS</h1>
                         
                         <div className="space-y-4">
-                            <button onClick={() => updateGame({ appState: 'setup_config' })} className="w-full bg-slate-800/80 hover:bg-slate-700/80 border border-slate-600/50 text-white font-black py-4 px-6 rounded-xl flex items-center justify-center gap-3 text-lg uppercase transition-all shadow-lg">
-                                <IconTarget size={24} /> JUGAR EN LOCAL (Solo Tablet)
+                            <button onClick={() => {
+                                const id = Math.random().toString(36).substring(2, 6).toUpperCase();
+                                setRoomId(id);
+                                setIsOnline(true);
+                                setIsAdminOnlyMode(true);
+                                updateGame({ appState: 'setup_config' });
+                            }} className="w-full bg-slate-800/80 hover:bg-slate-700/80 border border-slate-600/50 text-white font-black py-4 px-6 rounded-xl flex items-center justify-center gap-3 text-lg uppercase transition-all shadow-lg">
+                                <IconTarget size={24} /> JUGAR PARTIDA LOCAL
                             </button>
 
                             <div className="relative py-4">
@@ -1542,26 +1555,6 @@
                         <div className="z-10 w-full max-w-4xl bg-slate-900/80 backdrop-blur-xl p-6 rounded-3xl border border-fuchsia-500/30 shadow-[0_0_50px_rgba(236,72,153,0.2)] flex flex-col min-h-0">
                             <h2 className="text-3xl font-black text-center mb-6 text-fuchsia-400 shrink-0 drop-shadow-md">NOMBRES</h2>
                             
-                            {!isOnline && !isAdminOnlyMode && (
-                                <button onClick={() => {
-                                    const id = Math.random().toString(36).substring(2, 6).toUpperCase();
-                                    setRoomId(id);
-                                    setIsOnline(true);
-                                    setIsAdminOnlyMode(true);
-                                    updateGame({ appState: 'setup_names' });
-                                }} className="mb-6 mx-auto bg-slate-800 hover:bg-slate-700 text-cyan-400 border border-cyan-500/50 px-4 py-3 rounded-xl text-sm font-bold flex items-center justify-center gap-2 transition-all w-full max-w-[300px] shadow-[0_0_15px_rgba(6,182,212,0.2)]">
-                                    <IconQrCode size={18} /> Activar Mando Único (Admin)
-                                </button>
-                            )}
-                            {isAdminOnlyMode && roomId && (
-                                <div className="mb-6 mx-auto bg-slate-950/60 border border-cyan-500/50 p-4 rounded-2xl flex flex-col md:flex-row items-center justify-center gap-4 shadow-[0_0_15px_rgba(6,182,212,0.2)] w-full max-w-md">
-                                    <img src={`https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(generateSafeQRUrl() + '&admin=true')}`} alt="QR Admin" className="w-24 h-24 rounded-xl bg-white p-1 shrink-0" />
-                                    <div className="text-center md:text-left">
-                                        <h4 className="text-cyan-400 font-black uppercase text-sm md:text-base mb-1">Mando Admin Activado</h4>
-                                        <p className="text-slate-400 text-xs md:text-sm">Escanea este QR con un móvil para usarlo como mando único de la partida.</p>
-                                    </div>
-                                </div>
-                            )}
 
                             <div className={`grid gap-3 w-full flex-1 min-h-0 ${getDynamicGridClass(numPlayers)} content-center`}>
                                 {tempNames.map((name, i) => {
@@ -1577,10 +1570,11 @@
                                                     const newNames = [...tempNames];
                                                     newNames[i] = e.target.value.toUpperCase();
                                                     setTempNames(newNames);
+                                                    setActiveNameInput(`names_${i}`);
                                                 }} className="w-full h-full bg-slate-950/80 backdrop-blur-sm border-2 border-slate-700/50 text-cyan-300 pl-12 pr-4 py-3 rounded-xl text-lg font-bold uppercase focus:border-fuchsia-500 focus:outline-none"/>
                                             
                                             {activeNameInput === `names_${i}` && suggestions.length > 0 && (
-                                                <div className="absolute top-full left-0 right-0 mt-2 bg-slate-800 border-2 border-slate-600 rounded-xl shadow-[0_10px_40px_rgba(0,0,0,0.8)] max-h-48 overflow-y-auto backdrop-blur-md">
+                                                <div className="absolute top-full left-0 right-0 mt-2 bg-slate-800 border-2 border-slate-600 rounded-xl shadow-[0_10px_40px_rgba(0,0,0,0.8)] max-h-72 overflow-y-auto backdrop-blur-md z-50">
                                                     {suggestions.map((sugg, sIdx) => (
                                                         <div key={sIdx} className="px-4 py-3 hover:bg-slate-700 cursor-pointer text-cyan-300 font-bold uppercase border-b border-slate-700/50 last:border-0 transition-colors" onMouseDown={(e) => {
                                                             e.preventDefault(); // Evita que se cierre antes de registrar el clic
@@ -1602,14 +1596,7 @@
                             <div className="flex flex-col gap-4 mt-6 shrink-0 w-full">
                                 {uniqueNames.size !== tempNames.length && <p className="text-red-400 text-sm font-bold text-center animate-pulse tracking-wide">Los nombres deben ser diferentes entre sí.</p>}
                                 <div className="flex gap-4 w-full">
-                                    <button onClick={() => {
-                                        updateGame({ appState: 'setup_config' });
-                                        if (isAdminOnlyMode) {
-                                            setIsOnline(false);
-                                            setRoomId(null);
-                                            setIsAdminOnlyMode(false);
-                                        }
-                                    }} className="flex-1 bg-slate-800/80 hover:bg-slate-700/80 backdrop-blur-sm text-white font-bold py-4 rounded-xl transition-all border border-slate-600/50">Atrás</button>
+                                    <button onClick={() => updateGame({ appState: 'setup_config' })} className="flex-1 bg-slate-800/80 hover:bg-slate-700/80 backdrop-blur-sm text-white font-bold py-4 rounded-xl transition-all border border-slate-600/50">Atrás</button>
                                     <button 
                                         onClick={initPlayers} 
                                         disabled={!isNamesValid}
@@ -1731,10 +1718,11 @@
                                                                 const newNames = [...tempNames];
                                                                 newNames[i] = e.target.value.toUpperCase();
                                                                 setTempNames(newNames);
+                                                                setActiveNameInput(`rematch_${i}`);
                                                             }} className="w-full bg-slate-950/80 border-2 border-slate-700/50 text-cyan-300 pl-10 pr-3 py-2.5 rounded-lg text-sm md:text-base font-bold uppercase focus:border-cyan-500 focus:outline-none"/>
                                                         
                                                         {activeNameInput === `rematch_${i}` && suggestions.length > 0 && (
-                                                            <div className="absolute top-full left-0 right-0 mt-1 bg-slate-800 border-2 border-slate-600 rounded-xl shadow-[0_10px_40px_rgba(0,0,0,0.8)] z-50 max-h-40 overflow-y-auto backdrop-blur-md">
+                                                            <div className="absolute top-full left-0 right-0 mt-1 bg-slate-800 border-2 border-slate-600 rounded-xl shadow-[0_10px_40px_rgba(0,0,0,0.8)] z-50 max-h-72 overflow-y-auto backdrop-blur-md">
                                                                 {suggestions.map((sugg, sIdx) => (
                                                                     <div key={sIdx} className="px-3 py-2.5 hover:bg-slate-700 cursor-pointer text-cyan-300 font-bold uppercase text-sm md:text-base border-b border-slate-700/50 last:border-0 transition-colors" onMouseDown={(e) => {
                                                                         e.preventDefault();
@@ -2112,12 +2100,12 @@
                             </div>
                         )}
 
-                        <div className="flex-1 min-h-0 flex flex-col p-1.5 md:p-3">
+                        <div className="flex-1 min-h-0 flex flex-col p-1.5 md:p-3 overflow-y-auto md:overflow-hidden" style={{ touchAction: 'pan-y' }}>
                             
                             {effectiveTab === 'board' && (
-                                <div className="flex flex-col md:flex-row gap-2 md:gap-4 h-full w-full min-h-0">
+                                <div className="flex flex-col md:flex-row gap-2 md:gap-4 h-auto min-h-full md:h-full w-full md:min-h-0">
                                     
-                                    <div className={`order-2 md:order-1 ${joinedViaUrl ? 'flex-1' : 'flex-[2] md:flex-[3]'} flex items-center justify-center bg-slate-900/80 backdrop-blur-md rounded-3xl border border-slate-700/50 p-1 md:p-2 relative overflow-hidden shadow-[0_0_30px_rgba(0,0,0,0.5)] min-h-0`}>
+                                    <div className={`order-2 md:order-1 ${joinedViaUrl ? 'flex-none min-h-[480px] md:min-h-0 md:flex-1' : 'flex-none min-h-[480px] md:min-h-0 md:flex-[3]'} flex items-center justify-center bg-slate-900/80 backdrop-blur-md rounded-3xl border border-slate-700/50 p-1 md:p-2 relative overflow-hidden shadow-[0_0_30px_rgba(0,0,0,0.5)]`}>
                                         <div className="absolute inset-0 opacity-10" style={{ backgroundImage: 'linear-gradient(#334155 1px, transparent 1px), linear-gradient(90deg, #334155 1px, transparent 1px)', backgroundSize: '20px 20px'}}></div>
                                         
                                         <button onClick={() => setInputMode(m => m === 'board' ? 'numbers' : 'board')} className="absolute top-2 md:top-3 left-2 md:left-3 z-30 bg-slate-800/90 text-cyan-400 border border-cyan-500/50 rounded-lg px-2 md:px-3 py-1.5 text-[10px] md:text-xs font-bold backdrop-blur-sm flex items-center gap-1.5 md:gap-2 shadow-[0_0_15px_rgba(6,182,212,0.3)] hover:bg-slate-700 active:scale-95 transition-all">
@@ -2233,10 +2221,10 @@
                                                 <div className="shrink-0 flex gap-1.5 md:gap-3 p-1.5 md:p-3 border-t border-slate-700/50 bg-slate-950/80 w-full h-16 md:h-24">
                                                     <div className="flex-[2] flex gap-1.5 md:gap-3 bg-slate-900/80 p-1 md:p-1.5 rounded-xl md:rounded-2xl border border-slate-700/50 shadow-inner h-full">
                                                         <button onClick={() => handleHit(25, 1)} disabled={!isActionAllowed() || isTurnComplete || winner || pendingConfirmation} className="flex-1 h-full bg-cyan-900/40 hover:bg-cyan-800/60 text-cyan-400 font-black text-[11px] md:text-xl lg:text-2xl rounded-lg md:rounded-xl active:bg-cyan-600 border border-cyan-500/30 disabled:opacity-30 transition-colors flex flex-col md:flex-row items-center justify-center gap-0.5 md:gap-2">
-                                                            <span>25</span> <span className="text-[9px] md:text-sm uppercase opacity-80">(FUERA DIANA)</span>
+                                                            <span>25</span> <span className="text-[9px] md:text-sm uppercase opacity-80">(SIMPLE DIANA)</span>
                                                         </button>
                                                         <button onClick={() => handleHit(25, 2)} disabled={!isActionAllowed() || isTurnComplete || winner || pendingConfirmation} className="flex-1 h-full bg-fuchsia-900/40 hover:bg-fuchsia-800/60 text-fuchsia-400 font-black text-[11px] md:text-xl lg:text-2xl rounded-lg md:rounded-xl active:bg-fuchsia-600 border border-fuchsia-500/30 disabled:opacity-30 transition-colors flex flex-col md:flex-row items-center justify-center gap-0.5 md:gap-2">
-                                                            <span>50</span> <span className="text-[9px] md:text-sm uppercase opacity-80">(DIANA)</span>
+                                                            <span>50</span> <span className="text-[8px] md:text-sm uppercase opacity-80">(DOBLE DIANA)</span>
                                                         </button>
                                                     </div>
                                                     <button onClick={handleMiss} disabled={!isActionAllowed() || isTurnComplete || winner || pendingConfirmation} className="flex-1 h-full bg-red-900/40 hover:bg-red-800/60 text-red-400 font-black text-xs md:text-xl lg:text-2xl rounded-xl md:rounded-2xl active:bg-red-600 border border-red-500/30 disabled:opacity-30 transition-colors shadow-inner flex items-center justify-center">
@@ -2247,10 +2235,10 @@
                                         )}
                                     </div>
 
-                                    <div className={`order-1 md:order-2 ${joinedViaUrl ? 'flex-none shrink-0' : 'flex-[3] md:flex-[2] h-full'} flex flex-col gap-2 min-h-0`}>
+                                    <div className={`order-1 md:order-2 flex-none shrink-0 md:min-h-0 ${joinedViaUrl ? '' : 'md:flex-[2] md:h-full'} flex flex-col gap-2`}>
                                         {turnCardContent}
 
-                                        <div className={`${joinedViaUrl ? 'hidden md:flex' : 'flex-1'} bg-slate-900/80 backdrop-blur-md border border-slate-700/50 rounded-2xl overflow-hidden flex flex-col min-h-0 shadow-[0_0_20px_rgba(0,0,0,0.4)]`}>
+                                        <div className={`${joinedViaUrl ? 'hidden md:flex' : 'flex-none min-h-[250px] md:min-h-0 md:flex-1'} bg-slate-900/80 backdrop-blur-md border border-slate-700/50 rounded-2xl overflow-hidden flex flex-col shadow-[0_0_20px_rgba(0,0,0,0.4)]`}>
                                             <div className="bg-slate-950/60 px-3 py-1.5 border-b border-slate-700/50 flex justify-between items-center shrink-0">
                                                 <span className="text-[10px] md:text-xs font-bold text-slate-300 uppercase tracking-widest drop-shadow-md">En vivo</span>
                                                 <span className="text-[9px] md:text-[10px] font-bold text-fuchsia-400 bg-fuchsia-900/40 px-2 rounded-full border border-fuchsia-500/30 drop-shadow-md truncate max-w-[120px]">
@@ -2302,8 +2290,8 @@
                             )}
 
                             {effectiveTab === 'scores' && (
-                                <div className="flex flex-col md:flex-row gap-2 md:gap-4 h-full w-full min-h-0">
-                                    <div className="flex-1 flex flex-col bg-slate-900/80 backdrop-blur-md border border-slate-700/50 rounded-3xl overflow-hidden shadow-[0_0_30px_rgba(0,0,0,0.5)] min-h-0">
+                                <div className="flex flex-col md:flex-row gap-2 md:gap-4 h-auto min-h-full md:h-full w-full md:min-h-0">
+                                    <div className="flex-none min-h-[480px] md:min-h-0 md:flex-1 flex flex-col bg-slate-900/80 backdrop-blur-md border border-slate-700/50 rounded-3xl overflow-hidden shadow-[0_0_30px_rgba(0,0,0,0.5)]">
                                         {!isCricket && gameMode !== 'around_the_clock' && (
                                             <div className="p-2 md:p-3 bg-slate-950/80 border-b border-slate-700/50 flex justify-end items-center shrink-0">
                                                 <span className="text-xs md:text-sm font-bold text-slate-200 bg-slate-800/80 px-3 md:px-4 py-1.5 md:py-2 rounded-full border border-slate-600/50 backdrop-blur-sm">Pts en ronda: <span className="text-cyan-400">+{currentTurnPoints}</span></span>
@@ -2353,7 +2341,7 @@
                                         )}
                                     </div>
                                 </div>
-                                {(isAdminOnlyMode || isAdminRemote) && (
+                                {(!joinedViaUrl || isAdminRemote) && (
                                     <div className="order-first md:order-last flex-none shrink-0 w-full md:w-[35%] lg:w-[30%] flex flex-col gap-2 min-h-0">
                                         {turnCardContent}
                                     </div>
@@ -2382,8 +2370,8 @@
                         <div className="absolute inset-0 z-50 bg-black/90 backdrop-blur-sm flex flex-col items-center justify-center p-4">
                             <div className="w-full max-w-lg flex flex-col items-center bg-slate-900 border border-slate-700 p-8 rounded-3xl shadow-2xl">
                                 <h2 className="text-3xl md:text-4xl font-black text-white mb-2">SALA: <span className="text-fuchsia-400">{roomId}</span></h2>
-                                <p className="text-slate-300 mb-6 font-bold text-center">Escanea este código con cualquier móvil para unirse a la partida como mando a distancia.</p>
-                                <img src={`https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(generateSafeQRUrl())}`} alt="QR Sala" className="rounded-xl border-4 border-white w-full max-w-[250px] aspect-square shadow-[0_0_20px_rgba(255,255,255,0.2)] mb-8" />
+                                <p className="text-slate-300 mb-6 font-bold text-center">{isAdminOnlyMode ? 'Escanea este código con tu móvil para usarlo como mando a distancia de la tablet.' : 'Escanea este código con cualquier móvil para unirse a la partida como jugador.'}</p>
+                                <img src={`https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(generateSafeQRUrl() + (isAdminOnlyMode ? '&admin=true' : ''))}`} alt="QR Sala" className="rounded-xl border-4 border-white w-full max-w-[250px] aspect-square shadow-[0_0_20px_rgba(255,255,255,0.2)] mb-8" />
                                 <button onClick={() => setShowQR(false)} className="w-full bg-slate-800 hover:bg-slate-700 text-white font-bold py-4 rounded-xl transition-colors text-xl">Cerrar Código QR</button>
                             </div>
                         </div>

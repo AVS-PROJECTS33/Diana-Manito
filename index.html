@@ -80,17 +80,27 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone@7.23.10/babel.min.js"></script>
 
-    <!-- MÓDULOS DE FIREBASE -->
-    <script type="module">
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, doc, setDoc, getDoc, onSnapshot, collection, deleteDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-
+    <!-- MÓDULOS DE FIREBASE (compat - evita conflicto con Babel standalone) -->
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+    <script>
+        // Wrapper para mantener compatibilidad con el código existente (window.fb.X)
         window.fb = {
-            initializeApp, getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged,
-            getFirestore, doc, setDoc, getDoc, onSnapshot, collection, deleteDoc
+            initializeApp:          (config) => firebase.initializeApp(config),
+            getAuth:                (app)    => app.auth(),
+            signInAnonymously:      (auth)   => auth.signInAnonymously(),
+            signInWithCustomToken:  (auth, token) => auth.signInWithCustomToken(token),
+            onAuthStateChanged:     (auth, cb)    => auth.onAuthStateChanged(cb),
+            getFirestore:           (app)    => app.firestore(),
+            doc:        (db, ...segments) => db.doc(segments.join('/')),
+            setDoc:     (ref, data, opts) => opts ? ref.set(data, opts) : ref.set(data),
+            getDoc:     (ref)             => ref.get(),
+            onSnapshot: (ref, onNext, onErr) => ref.onSnapshot(onNext, onErr),
+            collection: (db, ...segments) => db.collection(segments.join('/')),
+            deleteDoc:  (ref)             => ref.delete()
         };
     </script>
 
@@ -250,7 +260,7 @@
                             const firebaseConfig = typeof __firebase_config !== 'undefined'
                                 ? JSON.parse(__firebase_config)
                                 : {
-                                    apiKey: "AIzaSyB0qANx0EICZiBp1wVo4DSzSLNbZlwiR7M",
+                                    apiKey: "AIzaSyDQsQxysJyE9p6XbuRWlykncNtc_kfY3no",
                                     authDomain: "manitos-darts.firebaseapp.com",
                                     projectId: "manitos-darts",
                                     storageBucket: "manitos-darts.firebasestorage.app",
